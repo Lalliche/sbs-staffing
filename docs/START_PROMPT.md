@@ -1,0 +1,49 @@
+# Prompt to paste into Claude Code (open Claude Code in this folder: ~/Workspace/Projects/SBS2)
+
+```text
+You are building SBS Staffing & Resource Management: the SECOND, independent SBS product (the first one, SBS 360° feedback platform, already exists in ~/Workspace/Projects/SBS). Work autonomously, end to end, in the phases below. Only stop to ask me if something is truly ambiguous or blocked.
+
+## What this is
+A client-pitch PROTOTYPE (not the real production system): Next.js + TypeScript + Tailwind v4 + `motion`, NO backend, all data in localStorage, deterministic seed, every number computed by selectors. Same working method as the SBS 360° project. It must look and feel like the internal staffing / resource-management tool of a top international consulting firm: premium, sober, dense, fast, and above all BUSINESS-COHERENT. Priority number one: the correctness of the staffing engine (matching, conflicts, capacity, utilization) and its unit tests. Never fake a number; never leave a dead button or an empty page.
+
+## Read first, in this order
+1. docs/prototype-kit/CLAUDE.md, README.md and skills/*.md (generic rules; dos-and-donts.md first; analyze-reference.md for the research).
+2. docs/SBS_STAFFING_PROTOTYPE_SPEC_v1.md — the source of truth. Read it fully, twice. Section 0.2 lists what the prototype changes vs. the original brief (no Postgres/Node/real auth: simulate; keep every functional requirement).
+3. docs/sbs360-reference/ — CLAUDE.md, the 360° spec (section 5.5 back-office patterns apply here too) and motion-plan.md: structure and conventions of the finished sibling project.
+4. docs/sbs-brand-reference/ — SBS identity INPUTS (logos, sbsfirm.org analysis, 360° design system). Inputs only, not a decision.
+5. The code baseline: ~/Workspace/Projects/SBS (git https://github.com/Lalliche/SBS). Read its CLAUDE.md and src/ before writing anything. Reuse, don't rewrite: src/components/ui (Button, Overlay Modal/Drawer, Toast, Popover, Tabs, DataTable, FilterBar, FormInputs, Surface), src/components/charts, src/components/motion, src/lib (motion-tokens, utils, use-media, use-query-state), the store pattern (src/lib/store: types / engine / seed / actions / selectors / store with useSyncExternalStore + localStorage + versioned state), AppShell / Sidebar / TopBar / DemoBar / CommandPalette / Tour / PeoplePicker / Guard. Copy the generic parts, adapt them, and NEVER copy the 360° domain code (feedback, synthesis, anonymity, client links).
+
+## Phase 0 — UX + brand research with AGENTS (before any UI code)
+I want the best possible brand and design system for this product, not a default one. Do real research by spawning research subagents IN PARALLEL (use the Agent tool, general-purpose; give each a precise brief and a required output format; they can use WebSearch / WebFetch and the Claude in Chrome extension for screenshots):
+- Agent A — Product benchmark: resource management / staffing / capacity planning tools (e.g. Float, Runn, Resource Guru, Kantata/Mavenlink, Forecast, Productive, Planview, Workday/SAP staffing flows, Smartsheet resource management) plus what is publicly known of Big-4 internal staffing platforms. Extract information architecture, planning-grid patterns, heatmaps, conflict UX, scorecards for candidate matching, capacity forecast views, what makes them feel premium vs. cluttered. Output: patterns to adopt / avoid, with concrete examples.
+- Agent B — Enterprise data-density UX: dense tables, planning grids with drag-and-drop, heatmaps and Gantt legibility, colour-blind-safe status systems (green normal / orange alert / red conflict must also carry icon + label), typography for tabular figures, keyboard-first workflows, WCAG AA. Output: concrete tokens and component rules (row height, density modes, number formatting, chart marks).
+- Agent C — Brand: analyse sbsfirm.org (screenshots, computed styles, logo) and docs/sbs-brand-reference. Propose THREE distinct brand directions for SBS Staffing (e.g. inherit the SBS ink/red/beige; adapt it; or a sibling sub-brand), each with palette (with hex, contrast ratios), type pairing, radius/density language, logo/wordmark treatment for the product name, and the mood. Recommend one with a written rationale. It must feel related to SBS but NOT identical to SBS 360°, and must not look like a generic SaaS template.
+- Agent D (optional) — Motion and data-viz: restrained, purposeful motion for a work tool used for hours; chart animation on first view only; planning-grid interaction feedback (drag, resize, snap, conflict shake).
+Synthesise the agents' reports yourself (do not just paste them). Write:
+- docs/ux-research.md (findings, decisions, rejected options and why),
+- docs/design-system.md (tokens as @theme values: colours incl. status + chart series, type scale, radius, density, elevation, components, planning/heatmap/Gantt specifics, logo/wordmark usage),
+- docs/motion-plan.md (login/persona entry + quiet app motion; reduced-motion design).
+Choose the direction yourself; do not stop for approval; summarise the choice at the end of the session.
+
+## Phase 1+ — Build (follow spec section 12, in order)
+- Scaffold the Next.js app IN THIS FOLDER. create-next-app rejects uppercase folder names, so scaffold in a temp directory with a lowercase name (e.g. "sbs-staffing") and move the files here; package name sbs-staffing. Check the installed Next.js version and read node_modules/next/dist/docs before writing code (AGENTS.md says the same). Same stack versions as ../SBS (package.json). Disable cacheComponents if the scaffold enables it (client-side localStorage app).
+- Write this project's own CLAUDE.md EARLY (mirror docs/sbs360-reference/CLAUDE.md: client facts, conflict order, deliberate kit overrides, routes, status) and keep its "Status / known gaps" section current at the end of every phase. Kit overrides that still apply: TypeScript; `em`-scale via `--spacing: 0.25em`; default Tailwind palette wiped, tokens only from docs/design-system.md; French UI, English code.
+- Architecture: src/lib/store/{types,seed,actions,selectors,store}.ts and src/lib/engine/{capacity,utilization,matching,conflicts,booking,leave,timesheet,forecast,permissions,audit}.ts as PURE, unit-tested functions. UI never computes business rules. Every write goes through actions that also write an AuditLog row and, when relevant, a notification.
+- RBAC: `can(user, permissionString, resource)` driven by an editable role→permission matrix stored in the store; used by routes, menus, buttons AND selectors (sensitive fields like salaries/costs/confidential evaluations must be absent from selector output for roles without the permission). 403 state for forbidden URLs.
+- Seed: deterministic, volumes and storylines from spec section 9 (40 collaborateurs, 5 départements: Audit / Expertise comptable / Conseil juridique & fiscal / Stratégie & conseil / Transactions, 5 grades, ~30 skills, 15 missions, 10 fictional clients, 30 assignments, leaves, 8 weeks of timesheets, requests, evaluations, notifications, forecast pipeline). Four scenarios on the demo bar. NEVER use real people or real client names; data is labelled fictional.
+- The AI assistant is deterministic and honest (spec 8.15): intent router over real selectors, figures with their source, CV analysis with a validation screen, never assigns anything by itself.
+- Evaluations module stays LIGHT (spec 8.13): no weights, no global score, no anonymity logic; this is not the 360° product.
+- Efficiency: after Phase 1 is solid (primitives, store, shell, engine + tests), you MAY parallelise independent modules with subagents (e.g. Planning grid, Timesheets, Analytics/Reports, Marketplace), each in its own folder with a written interface contract (types + selectors + actions) so they do not collide; you integrate and review. Keep the engine and the store under your own control.
+- Commit locally at the end of each phase (git init is fine; do NOT add a remote, do NOT push, do NOT deploy until I say so).
+- Dev server hygiene: run it on port 3002 (`next dev -p 3002`). To stop it, kill ONLY the PID listening on that port (lsof -ti :3002 -sTCP:LISTEN); never `pkill -f "next dev"` — other projects' dev servers run on this machine. Stop your server when you finish.
+
+## Quality gates (per phase and at the end)
+- `npm test` (Vitest: capacity, utilization planned/real/billable, scoring + blocking criteria, conflicts, soft→hard, leave effect on availability, timesheet states and locking, forecast deficit "Déficit : 2 Seniors" example, RBAC, audit logging), `npm run lint`, `npm run build` — all green; report outputs honestly, including anything failing or skipped.
+- Verify in Chrome (Claude in Chrome extension): run the six demo scripts of spec section 10 end to end, plus the 12 test scenarios of the original brief (create employee; create mission with 1 Manager + 2 Seniors + 3 Juniors; smart search score; assign and see availability change; conflict detected; leave approval removes availability; timesheet submit + validate; utilization recalculated; capacity planning deficits; permissions; audit trail; persistence after refresh).
+- Visual QA at 1280 / 1440 / 1920 and a tablet width; mobile usable for Accueil, Mes timesheets, Mes congés, Marketplace, Notifications. Keyboard + focus + AA contrast.
+- No dead buttons, no empty pages, no console errors, no hard-coded figures. Check the spec section 11 checklist line by line.
+
+## Definition of done
+Everything in spec section 11 is true (or explicitly listed as a known gap), the three commands pass, CLAUDE.md status is current, and docs/ux-research.md + design-system.md + motion-plan.md exist and match what was built.
+Final message: what you built, the brand/design decisions and why (with the agents' key findings), what you could NOT verify, known gaps, and the exact commands to run it.
+```
