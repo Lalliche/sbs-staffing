@@ -4,8 +4,8 @@ Derived from agent D's report (`research-raw/D-motion-dataviz.md`), the kit's pl
 
 **Hero object:** the *planning grid* — the one picture that says "staffing". It appears at the login (assembling) and is the only place with physical interaction (drag, snap, conflict).
 
-## Login / persona entry (≤ 1.6 s, never blocks input)
-"The grid assembles": a faint 6-row × 12-column week grid sits behind the persona cards; 9–11 department-coloured blocks slide into their rows (x −1.5em → 0, opacity), row by row (60 ms/row); the last block snaps with a one-time ring flash; persona cards stagger in (70 ms). Cards/CTAs are interactive from t = 0. Card hover (fine pointer only): lift 0.125em, top Prussian bar `scaleX 0→1`, 160 ms. Select: others dim to 0.4, page enters. **Reduced:** final state, single 240 ms opacity fade, no flash.
+## Login / persona entry (≤ 0.9 s, never blocks input)
+The entry page is deliberately quiet: no credentials form, only the eight demo profiles. Background « Papier réglé » (research: `docs/research-raw/E-login-background.md`) — a fine 4 em ink grid at 6 % opacity, radially masked so the paper stays clean behind the content; the earlier coloured « grid assembles » blocks were dropped because they competed with the cards. Motion: the backdrop fades in once (500 ms, opacity only); header, title and persona cards rise 0.5–0.75 em with a 60 ms stagger. Card hover (fine pointer only): lift 0.125 em, top Prussian bar `scaleX 0→1`, 150 ms; press scale 0.98. Select: other cards dim to 0.4, then the page enters. **Reduced motion:** no backdrop fade, opacity-only fades, no lift.
 
 ## Quiet app motion
 | Pattern | Spec |
