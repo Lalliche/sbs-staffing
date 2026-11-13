@@ -1,0 +1,48 @@
+# Module contract (parallel build, Phases 2–8)
+
+Written by the integrator. Every module agent works ONLY inside its own files. Read first: `CLAUDE.md`, `docs/design-system.md`, `docs/motion-plan.md`, `docs/SBS_STAFFING_PROTOTYPE_SPEC_v1.md` (your sections), `docs/prototype-kit/skills/dos-and-donts.md`.
+
+## What exists (read these files, do not rewrite them)
+- **Engine (pure, tested)** `src/lib/engine/*`: `dates`, `capacity` (theoreticalHours, availableHours, assignedHours, dayLoads, peakLoadPct, averageLoadPct, absenceDaySet…), `utilization` (utilizationOf, utilizationOfGroup, statusOf, underUseLimit, targetFor), `conflicts` (checkBooking, findPlanConflicts), `matching` (scoreCandidate, rankCandidates, candidatePool, requirementLike), `booking` (evaluateBooking, requirementCoverage, projectCoverage, conflictsForConversion), `leave`, `timesheet` (anomalies, canTransition, isEditable, TS_LABEL, INTERNAL_CODES), `forecast` (forecastByGrade, forecastBySkill, monthlySeries, recruitmentNeeds, demandItems, deficitLabel, horizonEnd), `permissions` (PERMISSIONS, ROLE_LABEL, can, inScope), `audit`, `format` (fmtInt, fmtDec, fmtPct, fmtHours, fmtDZD, fmtDate, fmtDateShort, fmtMonth, fmtRange, relDays…), `memo`, `ids` (nextId).
+- **Types** `src/lib/store/types.ts` (do NOT edit; ask the integrator through your final report if a field is missing — meanwhile store extras in a module-local type).
+- **Store** `src/lib/store/store.ts`: `act(draft => ...)` (the ONLY way to write), `useApp()`, `getState()`. Hook `useSession()` from `@/lib/store/hooks` → `{ s, me (User), emp (my Employee), can(perm, resource?) }`.
+- **Actions already written** (`src/lib/store/actions/`): `assignments.ts` (createAssignment, createAssignments, convertToHard, updateAssignment, shiftAssignment, cancelAssignment, replaceAssignment — they return `Result` with `code: NEEDS_EXCEPTION` + `conflicts`/`blocks` when the engine demands a written exception: the UI must then show the exception modal and call again with `exceptionReason`), `leaves.ts` (submitLeave, submitDraftLeave, decideLeave, withdrawLeave), `time.ts` (ensureTimesheet, refreshStatuses, advanceTime), `notifications.ts` (markRead, markAllRead, setNotificationPref), `core.ts` (Result/ok/fail, deny, audit, notify, notifyHolders, actorOf, empName, userOfEmployee), `demo.ts`.
+- **Selectors already written** (`src/lib/store/selectors/`): `core.ts` (sessionUser, myEmployee, canDo, visibleEmployees, employeeById, nameOf, userName, visibleProjects, projectById, visibleAssignments, visibleLeaves, visibleRequests, visibleEvaluations, matchView, EmployeeView/ProjectView types), `notifications.ts`.
+- **UI** `src/components/ui/*` (import from `@/components/ui`): Button, IconButton, Badge, StatusPill, Avatar, Card, CardHeader, PageHeader, EmptyState, Callout, Skeleton, ProgressBar, DataTable (+SavedViews, density, column chooser, CSV export), FilterBar, FormInputs (TextInput, TextArea, SelectInput, SearchInput, Switch, Checkbox, SegmentedControl), Controls (DateInput, DateRangeInput, NumberInput, Slider, Combobox, MultiSelect, Tooltip, Stepper), Modal, Drawer, Popover, MenuItem, Tabs, Toast (`useToast`). Shared: `components/shared/PersonCell`, `components/app/Guard`, `useShell()` from `components/app/ShellContext` (`openAssistant`, `preview(title, description)` for out-of-scope « Aperçu » overlays), `components/app/useSkeleton` (`useFirstLoad()` → 300–500 ms skeleton on first view). Labels/tones for every enum: `src/lib/ui-domain.ts`. Downloads: `src/lib/download.ts` (`downloadFile`, `toCsv`). URL filter state: `src/lib/use-query-state.ts`.
+- **Seed** `src/lib/store/seed/*` (integrator-owned). Persona ids: u-karim (SUPER_ADMIN), u-yacine (DIRECTION, e29), u-samira (PARTNER Audit, e01), u-amine (RESOURCE_MANAGER), u-thomas (MANAGER Audit, e02), u-sophie (RH), u-claire (COLLABORATEUR Senior Audit, e04), u-lucas (COLLABORATEUR Junior, e11). The mission waiting for staffing is `p-04` (requirements `rq-04-1` Senior 60 %, `rq-04-2` Consultant). Default demo clock `state.now = 2026-11-15` (a Sunday; the week is Sunday→Thursday).
+
+## Rules (hard)
+1. **Every number on screen comes from engine/selectors.** Never hard-code a figure or compute a business rule in a component. If a derived number does not exist, add a pure function in YOUR module's selector file (reading raw state via the engine), with a unit test.
+2. **Sensitive data**: costs, rates, budgets, confidential evaluations go through `core.ts` selectors (`visibleEmployees`, `visibleProjects`, `matchView`, `visibleEvaluations`). Never read `s.employees[].dailyCost`, `s.projects[].budget` in a component. Guard UI controls with `can(perm, resource)`; actions re-check.
+3. **Writes** only via `act(d => yourAction(d, …))`. Every write: `deny()` permission gate, mutate the draft, `audit()`, `notify()`/`notifyHolders()` when relevant, return `Result`. Show a toast on success (with undo when reversible), an inline error or modal on failure. Never `alert/confirm/prompt`.
+4. **No dead buttons, no empty pages**: every control navigates, opens an overlay, changes state or shows a toast; out-of-scope behaviour opens `useShell().preview(...)`. Every list has search, filters, sort, empty state, skeleton on first view, and error state where it fits.
+5. **Pages are client components** (`"use client"`) wrapped in `<Guard perm=…>`; forbidden role → 403 state. Use `PageHeader` (breadcrumb → H1 + one-line description → actions). Filters live in the URL (`useQueryState`).
+6. **Design**: tokens only (`docs/design-system.md`); `em` sizing (`p-4` = 1em; no `px` for sizes except borders and documented grid geometry); brand red `ribbon` NEVER in the data zone; status = icon + label + colour (use `StatusPill`/`Badge`); dates relative to `state.now` (never `Date.now()`/`new Date()` in logic); French UI, English code; numbers via `engine/format`. Motion tokens from `@/lib/motion-tokens`; every animation has a reduced-motion path; charts draw on first view only.
+7. **Accessibility**: keyboard reachable, visible focus (global), labels on inputs, `aria-live` for async results, tables with captions, charts with a « Voir en tableau » twin.
+8. **Tests**: add Vitest tests for your selectors and actions (RBAC denial, audit row written, engine rule respected). Test files `*.test.ts` next to the code. Build states with `buildSeed(2)` then `s.session.userId = "u-…"`.
+9. **Files**: you own exactly the paths listed in your brief. You MAY create new files anywhere under those paths. You must NOT edit: `src/lib/store/{types,store,blank,hooks}.ts`, `src/lib/store/seed/**`, `src/lib/engine/**`, `src/components/ui/**`, `src/components/app/**` (except you may ADD a new file), `src/app/globals.css`, `package.json`. If you need a change there, say so precisely in your final report (do not work around it by copying/forking shared code).
+10. **Verification**: run `npx tsc --noEmit -p .` (ignore errors in files you do not own and `.next/types`), `npx eslint <your paths>`, and `npx vitest run <your test files>`. Do NOT run `next build`, `next dev` or `npm run dev` (the integrator owns the dev server and `.next`; concurrent builds corrupt it). Do NOT commit and do not touch git. Do not use `/tmp`; scratch files go in the session scratchpad.
+11. **Final report** (≤ 400 words): files created, public API (components/selectors/actions) other modules may use, tests written + results, spec items NOT done (known gaps), shared-file changes you need.
+
+## Cross-module routes and query params (link to these, implement your own)
+| Route | Owner | Params |
+|---|---|---|
+| `/app/accueil` | E | — |
+| `/app/planning` | C | `?lens=personnes\|missions\|departements&view=jour\|semaine\|mois\|trimestre&date=YYYY-MM-DD&q=&dept=&grade=&mission=<id>&employee=<id>&soft=0\|1&mode=blocs\|chaleur` |
+| `/app/disponibilites` | C | `?nouveau=1` (open the leave form) `&employee=<id>` |
+| `/app/missions`, `/app/missions/[id]` | B | `?nouveau=1` (wizard) · `[id]?tab=infos\|besoins\|equipe\|planning\|timesheets\|budget\|documents\|historique&matching=<requirementId>` (opens the matching drawer) |
+| `/app/demandes`, `/app/demandes/[id]` | B | `?nouveau=1&mission=<id>&requirement=<id>` |
+| `/app/collaborateurs`, `/app/collaborateurs/[id]` | A | `?q=&dept=&grade=&status=` · `[id]?tab=vue\|pro\|competences\|certifications\|missions\|historique\|planning\|timesheets\|evaluations\|documents` |
+| `/app/competences` | A | `?q=&view=referentiel\|recherche\|matrice` |
+| `/app/evaluations` | A | `?employee=<id>&mission=<id>` |
+| `/app/timesheets` | D | `?week=YYYY-MM-DD&employee=<id>&vue=mes\|validation\|historique` |
+| `/app/marketplace` | D | `?opportunity=<id>&nouveau=1` |
+| `/app/notifications` | D | `?tab=toutes\|non-lues\|<kind>` |
+| `/app/capacite` | E | `?horizon=1\|3\|6\|12&dept=&vue=grade\|competence` |
+| `/app/analytics` | E | `?rapport=<id>` |
+| `/app/admin`, `/app/admin/{utilisateurs,roles,referentiels,regles,audit,donnees,ia}`, `/app/aide` | F | `audit?entity=&actor=&q=` |
+
+Pages that other modules deep-link to must accept those params. Reusable pieces other modules may import by contract:
+- B exports `components/matching/MatchingDrawer` (`{ open, onClose, requirementId }`) and `components/missions/ExceptionModal` (`{ open, result: Extract<Result,{ok:false}>, onConfirm(reason), onCancel }`) — C (planning) imports `ExceptionModal`; until it exists C builds its own `components/planning/ConflictDialog` and must not wait.
+- E exports `components/charts/*` (Sparkline, LineChart, Bars, StackedBars, Donut, Heatmap, ChartCard) and `components/dashboards/Kpi`.
+- F exports `components/ai/AssistantDrawer` (already mounted by the shell).
