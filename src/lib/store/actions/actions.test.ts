@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { buildSeed } from "../seed";
 import { cancelAssignment, convertToHard, createAssignment, replaceAssignment, updateAssignment } from "./assignments";
-import { decideLeave, submitLeave, withdrawLeave } from "./leaves";
+import { setUsualRemoteDays, setWorkMode } from "./workmode";
+import { presenceOn } from "../../engine/workmode";
 import { advanceTime, refreshStatuses } from "./time";
-import { rankCandidates, requirementLike, candidatePool } from "../../engine/matching";
 import { utilizationOf } from "../../engine/utilization";
 import { availableHours } from "../../engine/capacity";
 import { UNSTAFFED_PROJECT } from "../seed/missions";
@@ -14,7 +14,6 @@ const as = (id: string): AppState => {
   s.session.userId = id;
   return s;
 };
-const req = (s: AppState) => s.requirements.find((r) => r.projectId === UNSTAFFED_PROJECT && r.gradeMin === "g-3")!;
 const book = (employeeId: string, status: "SOFT" | "HARD" = "HARD", extra = {}) => ({ employeeId, projectId: UNSTAFFED_PROJECT, requirementId: "rq-04-1", startDate: "2026-12-01", endDate: "2027-01-28", allocationPct: 60, status, ...extra });
 
 describe("assignment actions (demo script A)", () => {
@@ -121,39 +120,49 @@ describe("assignment actions (demo script A)", () => {
   });
 });
 
-describe("leave actions (demo script B)", () => {
-  it("approving a pending leave removes the person from compatible candidates", () => {
-    const s = as("u-thomas");
-    const pool = candidatePool(s, { gradeMin: "g-3", projectLeadId: "e02" });
-    const r = requirementLike(req(s), s.projects.find((p) => p.id === UNSTAFFED_PROJECT));
-    expect(rankCandidates(s, r, { employeeIds: pool })[0].employeeId).toBe("e16");
-    // Sofiane's manager is Leïla (e15): Thomas has no scope → refused
-    expect(decideLeave(s, "lv-02", "APPROUVEE").ok).toBe(false);
-    const rh = as("u-sophie");
-    const res = decideLeave(rh, "lv-02", "APPROUVEE");
-    expect(res.ok).toBe(true);
-    expect(rankCandidates(rh, r, { employeeIds: pool }).find((x) => x.employeeId === "e16")!.compatible).toBe(false);
-    expect(rh.audit[0]).toMatchObject({ action: "leave.approve", entity: "Congé" });
-    expect(rh.notifications.some((n) => n.kind === "LEAVE" && n.title === "Congé approuvé")).toBe(true);
+describe("work-mode actions", () => {
+  const e = (s: AppState, id: string) => s.employees.find((x) => x.id === id)!;
+  it("a resource manager sets a day remote, the engine reflects it and an audit row is written", () => {
+    const s = as("u-amine");
+    const before = presenceOn(s, e(s, "e16"), "2026-11-17");
+    const mode = before === "REMOTE" ? "ONSITE" : "REMOTE";
+    const nAudit = s.audit.length;
+    const r = setWorkMode(s, { employeeId: "e16", dates: ["2026-11-17"], mode });
+    expect(r.ok).toBe(true);
+    expect(presenceOn(s, e(s, "e16"), "2026-11-17")).toBe(mode);
+    expect(s.audit.length).toBeGreaterThan(nAudit);
+    expect(s.audit.find((a) => a.action === "workmode.set")).toMatchObject({ entity: "Présence", entityId: "e16", actorId: "u-amine" });
   });
-  it("refusal needs a reason; a collaborateur can submit then withdraw a request; overlaps are rejected", () => {
-    const rh = as("u-sophie");
-    expect(decideLeave(rh, "lv-08", "REFUSEE").ok).toBe(false);
-    expect(decideLeave(rh, "lv-08", "REFUSEE", "Charge d’audit trop élevée cette semaine.").ok).toBe(true);
-    const c = as("u-claire");
-    const ok = submitLeave(c, { type: "CONGE_ANNUEL", startDate: "2026-12-06", endDate: "2026-12-10" });
-    expect(ok.ok).toBe(true);
-    expect(submitLeave(c, { type: "CONGE_ANNUEL", startDate: "2026-12-08", endDate: "2026-12-12" }).ok).toBe(false);
-    if (ok.ok) {
-      expect(withdrawLeave(c, ok.value.id).ok).toBe(true);
-      expect(c.leaves.some((l) => l.id === ok.value.id)).toBe(false);
-    }
-    expect(submitLeave(c, { type: "CONGE_ANNUEL", startDate: "2026-12-04", endDate: "2026-12-05" }).ok).toBe(false); // Fri–Sat: no working day
+  it("setting the usual mode clears the override instead of storing a redundant row", () => {
+    const s = as("u-amine");
+    const usual = presenceOn(s, e(s, "e16"), "2026-11-22"); // a Sunday-week day with no seeded override
+    const other = usual === "REMOTE" ? "ONSITE" : "REMOTE";
+    expect(setWorkMode(s, { employeeId: "e16", dates: ["2026-11-22"], mode: other }).ok).toBe(true);
+    const n = s.workModes.length;
+    expect(setWorkMode(s, { employeeId: "e16", dates: ["2026-11-22"], mode: usual as "ONSITE" | "REMOTE" }).ok).toBe(true);
+    expect(s.workModes.length).toBe(n - 1);
+    expect(presenceOn(s, e(s, "e16"), "2026-11-22")).toBe(usual);
   });
-  it("a collaborateur cannot decide leaves", () => {
-    const c = as("u-claire");
-    const r = decideLeave(c, "lv-02", "APPROUVEE");
-    expect(r.ok).toBe(false);
+  it("weekends and empty selections are rejected; archived people cannot be changed", () => {
+    const s = as("u-amine");
+    expect(setWorkMode(s, { employeeId: "e16", dates: ["2026-11-20"], mode: "REMOTE" })).toMatchObject({ ok: false, code: "INVALID" }); // Friday
+    expect(setWorkMode(s, { employeeId: "e16", dates: [], mode: "REMOTE" })).toMatchObject({ ok: false, code: "INVALID" });
+    e(s, "e16").status = "ARCHIVE";
+    expect(setWorkMode(s, { employeeId: "e16", dates: ["2026-11-17"], mode: "REMOTE" })).toMatchObject({ ok: false, code: "INVALID" });
+  });
+  it("RBAC: a collaborateur changes only their own presence; the direction cannot change anyone's", () => {
+    const s = as("u-claire"); // Claire = e04
+    expect(setWorkMode(s, { employeeId: "e04", dates: ["2026-11-17"], mode: "REMOTE" }).ok).toBe(true);
+    expect(setWorkMode(s, { employeeId: "e16", dates: ["2026-11-17"], mode: "REMOTE" })).toMatchObject({ ok: false, code: "FORBIDDEN" });
+    const d = as("u-yacine");
+    expect(setWorkMode(d, { employeeId: "e16", dates: ["2026-11-17"], mode: "REMOTE" })).toMatchObject({ ok: false, code: "FORBIDDEN" });
+  });
+  it("the usual pattern can be edited but at least one day stays on site", () => {
+    const s = as("u-amine");
+    expect(setUsualRemoteDays(s, { employeeId: "e16", weekdays: [1, 3] }).ok).toBe(true);
+    expect(e(s, "e16").remoteWeekdays).toEqual([1, 3]);
+    expect(setUsualRemoteDays(s, { employeeId: "e16", weekdays: [0, 1, 2, 3, 4] })).toMatchObject({ ok: false, code: "INVALID" });
+    expect(s.audit.find((a) => a.action === "workmode.pattern")).toBeTruthy();
   });
 });
 

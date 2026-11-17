@@ -4,6 +4,8 @@ import Link from "next/link";
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { cn } from "@/lib/utils";
 import { act } from "@/lib/store/store";
+import { PRESENCE_META } from "@/components/presence/PresenceBadge";
+import { remoteDaysOf } from "@/lib/store/selectors/presence";
 import { useSession } from "@/lib/store/hooks";
 import { useQueryState } from "@/lib/use-query-state";
 import { createAssignment, updateAssignment, type AssignmentPatch } from "@/lib/store/actions/assignments";
@@ -46,6 +48,7 @@ export function PlanningGrid() {
   const view = (q.get("view") || "semaine") as View;
   const mode = q.get("mode") === "chaleur" ? "chaleur" : "blocs";
   const includeSoft = q.get("soft") !== "0";
+  const showPresence = q.get("presence") !== "0";
   const start = q.get("date") || defaultStart(s, view);
   const filters = { dept: q.get("dept") || undefined, grade: q.get("grade") || undefined, office: q.get("bureau") || undefined, mission: q.get("mission") || undefined, q: q.get("q") || undefined, employee: q.get("employee") || undefined };
   const z = ZOOM[view];
@@ -175,6 +178,7 @@ export function PlanningGrid() {
           <SegmentedControl size="sm" label="Zoom" value={view} onChange={(v) => setQ({ view: v })} options={(Object.keys(VIEW_LABEL) as View[]).map((v) => ({ value: v, label: VIEW_LABEL[v] }))} />
           <SegmentedControl size="sm" label="Mode d’affichage" value={mode} onChange={(v) => q.set("mode", v === "chaleur" ? "chaleur" : null)} options={[{ value: "blocs", label: "Affectations" }, { value: "chaleur", label: "Carte de charge" }]} />
           <label className="flex items-center gap-2 text-sm"><Switch size="sm" checked={includeSoft} onChange={(v) => q.set("soft", v ? null : "0")} label="Inclure les réservations" />Inclure les réservations</label>
+          {can("workmode.view") && <label className="flex items-center gap-2 text-sm"><Switch size="sm" checked={showPresence} onChange={(v) => q.set("presence", v ? null : "0")} label="Afficher la présence à distance" />Jours à distance <span className="inline-block h-0 w-5 border-t-[3px] border-dashed border-primary/60" aria-hidden /></label>}
           <span className="ms-auto flex items-center gap-1">
             <IconButton label="Période précédente" onClick={() => page(-1)}><ChevronLeft className="size-4" /></IconButton>
             <Button size="sm" variant="secondary" onClick={() => q.set("date", null)}>Aujourd’hui</Button>
@@ -224,7 +228,7 @@ export function PlanningGrid() {
               {todayX >= 0 && todayX <= width && <div className="absolute inset-y-0 w-0.5 bg-info" style={{ left: `${todayX}em` }} />}
             </div>
             {visibleRows.map((r, idx) => (
-              <Row key={r.key} r={r} idx={idx} rowH={rowH(r)} start={start} view={view} mode={mode} includeSoft={includeSoft} heatOnly={heatOnly} drag={drag} sel={sel} shake={shake} conflicts={conflicts} canEdit={canEdit} collapsed={collapsed} toggleGroup={(id) => setCollapsed((c) => (c.includes(id) ? c.filter((x) => x !== id) : [...c, id]))}
+              <Row key={r.key} r={r} idx={idx} rowH={rowH(r)} start={start} view={view} mode={mode} includeSoft={includeSoft} showPresence={showPresence} heatOnly={heatOnly} drag={drag} sel={sel} shake={shake} conflicts={conflicts} canEdit={canEdit} collapsed={collapsed} toggleGroup={(id) => setCollapsed((c) => (c.includes(id) ? c.filter((x) => x !== id) : [...c, id]))}
                 begin={begin} onKbStart={(a, m) => { setKb({ id: a.id, mode: m, days: 0 }); setLive(`Mode ${m === "move" ? "déplacement" : "redimensionnement"} : flèches gauche/droite, Entrée pour valider, Échap pour annuler.`); }} onOpen={(id) => { setSel(id); setPop(id); }} onEmpty={(empId, date) => canEdit && setCreating({ employeeId: empId, date })} />
             ))}
           </div>
@@ -251,8 +255,8 @@ export function PlanningGrid() {
 }
 
 /* ---------------- one row ---------------- */
-const Row = memo(function Row({ r, idx, rowH, start, view, mode, includeSoft, heatOnly, drag, sel, shake, conflicts, canEdit, collapsed, toggleGroup, begin, onKbStart, onOpen, onEmpty }: {
-  r: PlanRow; idx: number; rowH: number; start: string; view: View; mode: "blocs" | "chaleur"; includeSoft: boolean; heatOnly: HeatState | null; drag: Drag | null; sel: string | null; shake: string | null; conflicts: Set<string>; canEdit: boolean; collapsed: string[];
+const Row = memo(function Row({ r, idx, rowH, start, view, mode, includeSoft, showPresence, heatOnly, drag, sel, shake, conflicts, canEdit, collapsed, toggleGroup, begin, onKbStart, onOpen, onEmpty }: {
+  r: PlanRow; idx: number; rowH: number; start: string; view: View; mode: "blocs" | "chaleur"; includeSoft: boolean; showPresence: boolean; heatOnly: HeatState | null; drag: Drag | null; sel: string | null; shake: string | null; conflicts: Set<string>; canEdit: boolean; collapsed: string[];
   toggleGroup: (id: string) => void; begin: (e: React.PointerEvent, a: Assignment, m: DragMode) => void; onKbStart: (a: Assignment, m: DragMode) => void; onOpen: (id: string) => void; onEmpty: (empId: string, date: string) => void;
 }) {
   const { s } = useSession();
@@ -272,11 +276,12 @@ const Row = memo(function Row({ r, idx, rowH, start, view, mode, includeSoft, he
     );
   }
   const emp = r.employee;
+  const remoteDays = showPresence && emp ? remoteDaysOf(s, emp, start, addDays(start, z.days - 1)) : []; // Row is memoised; the selector is cheap
   const heat = mode === "chaleur" && emp ? heatCells(s, emp, start, view, includeSoft) : null;
   return (
     <div role="row" aria-rowindex={idx + 2} data-rowkey={r.key} data-emp={emp?.id} className="relative z-10 flex border-b border-line" style={{ height: `${rowH}em` }}>
       <div role="rowheader" className="sticky start-0 z-10 flex items-center gap-2 border-e border-border bg-bg px-3" style={{ width: `${LEFT}em` }}>
-        {emp ? <><Avatar person={emp} size="sm" /><Link href={`/app/collaborateurs/${emp.id}`} className="min-w-0 leading-tight hover:underline"><span className="block truncate text-sm font-medium text-ink">{r.label}</span><span className="block truncate text-2xs text-text-muted">{r.sub}</span></Link></> :
+        {emp ? <><Avatar person={emp} size="sm" /><Link href={`/app/collaborateurs/${emp.id}`} className="min-w-0 leading-tight hover:underline"><span className="flex items-center gap-1 text-sm font-medium text-ink"><span className="truncate">{r.label}</span>{r.presenceToday && r.presenceToday !== "OFF" && (() => { const m = PRESENCE_META[r.presenceToday]; return <m.Icon className="size-3.5 shrink-0 text-text-muted" aria-label={`Aujourd’hui : ${m.label}`} />; })()}</span><span className="block truncate text-2xs text-text-muted">{r.sub}</span></Link></> :
           r.kind === "placeholder" ? <Link href={`/app/missions/${r.projectId}?tab=besoins&matching=${r.requirement!.id}`} className="min-w-0 leading-tight"><span className="flex items-center gap-1 text-xs font-medium text-alert"><AlertTriangle className="size-3.5 shrink-0" aria-hidden /><span className="truncate">{r.label}</span></span><span className="block truncate text-2xs text-text-muted">{r.sub}</span></Link> :
           <Link href={`/app/missions/${r.projectId}`} className="min-w-0 leading-tight hover:underline"><span className="flex items-center gap-1.5"><span className="size-2 shrink-0 rounded-full" style={{ background: dept }} aria-hidden /><span className="block truncate text-sm font-medium text-ink">{r.label}</span></span><span className="block truncate text-2xs text-text-muted">{r.sub}</span></Link>}
       </div>
@@ -287,6 +292,7 @@ const Row = memo(function Row({ r, idx, rowH, start, view, mode, includeSoft, he
           return <div key={c.from} title={`${emp?.firstName} ${emp?.lastName} · ${fmtRange(c.from, c.to)} · ${Math.round(c.pct)} %`} className={cn("absolute top-1 flex flex-col items-center justify-center overflow-hidden rounded-sm border border-white text-2xs font-medium tabular-nums", h.cls, heatOnly && heatOnly !== c.state && "opacity-25")} style={{ left: `${c.x}em`, width: `${c.w}em`, height: `${rowH - 0.5}em` }}>{c.w >= 2.2 ? <><span aria-hidden>{h.icon}</span>{Math.round(c.pct)}</> : <span aria-hidden>{h.icon}</span>}<span className="sr-only">{h.label}</span></div>;
         }) : (
           <>
+            {showPresence && emp && remoteDays.map((d) => <div key={d} title={`À distance — ${fmtDateShort(d)}`} className="pointer-events-none absolute bottom-0 border-b-[3px] border-dashed border-primary/60" style={{ left: `${diffDays(start, d) * z.ppd}em`, width: `${z.ppd}em` }} />)}
             {r.leaves.map((l) => { const x = diffDays(start, l.startDate) * z.ppd; const w = (diffDays(l.startDate, l.endDate) + 1) * z.ppd; if (x + w < 0 || x > width) return null; return <div key={l.id} title={`Absence approuvée : ${fmtRange(l.startDate, l.endDate)}`} className="absolute inset-y-1 rounded-sm border border-neutral/40 bg-paper bg-[image:var(--hatch-absent)]" style={{ left: `${Math.max(0, x)}em`, width: `${w}em` }} />; })}
             {r.lanes.map(({ a, lane }) => {
               const dragging = drag?.id === a.id;

@@ -27,14 +27,27 @@ describe("SBS Staffing Intelligence (deterministic)", () => {
     expect(s.assignments.length).toBe(before);
     expect(answer(s, "Affecte Sofiane Djebbar à la mission").kind).toBe("refusal");
   });
-  it("executive Q&A: overloaded department, unstaffed missions, utilization (planned ≠ real), skills gap", () => {
+  it("executive Q&A: overloaded department, unstaffed missions, utilization, skills gap", () => {
     const s = as("u-yacine");
     expect(answer(s, "Quel département est le plus surchargé ?").intent).toBe("overloaded_dept");
-    const u = answer(s, "Quel est le taux d’utilisation réel ?");
+    const u = answer(s, "Quel est le taux d’utilisation ?");
     expect(u.intent).toBe("utilization");
-    expect(u.figures.map((f) => f.label).join()).toMatch(/Réelle.*Planifiée.*Facturabilité/);
+    expect(u.figures.map((f) => f.label).join()).toMatch(/Planifiée/);
+    expect(u.figures.map((f) => f.label).join()).not.toMatch(/Réelle|Facturabilité/);
     expect(answer(s, "Quelles missions ne sont pas staffées ?").figures[0].raw ?? answer(s, "Quelles missions ne sont pas staffées ?").figures[0].value).toBeTruthy();
     expect(answer(s, "Quelles compétences sont insuffisantes ?").intent).toBe("skills_gap");
+  });
+  it("answers who is on site or remote today from the presence selector, and respects scope and permission", () => {
+    const s = as("u-amine");
+    const a = answer(s, "Qui est sur site aujourd’hui ?");
+    expect(a.kind).toBe("answer");
+    expect(a.intent).toBe("presence");
+    const raw = Object.fromEntries(a.figures.map((f) => [f.label, f.raw]));
+    expect(Number(raw["Présentiel"]) + Number(raw["À distance"]) + Number(raw["Absents"])).toBeGreaterThan(0);
+    expect(a.source).toMatch(/Basé sur/);
+    expect(answer(s, "Qui travaille à distance ?").intent).toBe("presence");
+    s.rolePermissions.RESOURCE_MANAGER = s.rolePermissions.RESOURCE_MANAGER.filter((p) => p !== "workmode.view");
+    expect(answer(s, "Qui est sur site aujourd’hui ?").kind).toBe("refusal");
   });
   it("respects RBAC: a Collaborateur gets a polite refusal for company data and costs", () => {
     const s = as("u-lucas");

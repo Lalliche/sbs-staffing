@@ -7,6 +7,7 @@ import { fmtDateShort } from "../../engine/format";
 import { statusOf, utilizationOf, utilizationOfGroup } from "../../engine/utilization";
 import type { AppState, Employee, ISODate, StaffingRequest } from "../types";
 import { availabilityOf, type Availability } from "./people";
+import { presenceSummary, presenceWeeks } from "./presence";
 import { canDo, sessionUser } from "./core";
 
 export type Period = "recent" | "next" | "month" | "quarter";
@@ -46,13 +47,12 @@ const pct = (n: number) => `${new Intl.NumberFormat("fr-FR", { maximumFractionDi
 const int = (n: number) => new Intl.NumberFormat("fr-FR").format(Math.round(n));
 
 export function weeklyTrend(s: AppState, emps: Employee[], weeks = 8) {
-  const out: { week: ISODate; label: string; planned: number; real: number; billable: number; worked: number; billableH: number }[] = [];
+  const out: { week: ISODate; label: string; planned: number }[] = [];
   const base = addDays(weekStart(s.now), -7 * weeks);
   for (let i = 0; i < weeks; i++) {
     const from = addDays(base, i * 7);
     const to = addDays(from, 6);
-    const g = utilizationOfGroup(s, emps, from, to);
-    out.push({ week: from, label: fmtDateShort(from), planned: g.planned, real: g.real, billable: g.billability, worked: g.worked, billableH: g.billable });
+    out.push({ week: from, label: fmtDateShort(from), planned: utilizationOfGroup(s, emps, from, to).planned });
   }
   return out;
 }
@@ -60,9 +60,8 @@ export function weeklyTrend(s: AppState, emps: Employee[], weeks = 8) {
 export function executive(s: AppState, f: DashFilters) {
   const emps = scopedEmployees(s, f);
   const { from, to } = periodRange(s, f.period);
-  const realTo = f.period === "next" ? undefined : to > lastClosedWeekEnd(s) ? lastClosedWeekEnd(s) : to;
   const grp = utilizationOfGroup(s, emps, from, to);
-  const real = realTo && realTo >= from ? utilizationOfGroup(s, emps, from, realTo) : null;
+  const presence = presenceSummary(s, emps);
   const ahead = { from: s.now, to: addDays(s.now, 27) };
   const avail: Record<Availability, number> = { LIBRE: 0, PARTIELLE: 0, PLEINE: 0, SURCHARGEE: 0, INDISPONIBLE: 0 };
   let affectes = 0, under = 0, over = 0;
@@ -81,12 +80,11 @@ export function executive(s: AppState, f: DashFilters) {
     { key: "actifs", label: "Collaborateurs actifs", value: emps.length, display: int(emps.length), href: "/app/collaborateurs?status=ACTIF" },
     { key: "dispo", label: "Disponibles (4 sem.)", value: avail.LIBRE + avail.PARTIELLE, display: int(avail.LIBRE + avail.PARTIELLE), href: "/app/collaborateurs?view=disponibles", hint: "Libres ou partiellement chargés" },
     { key: "affectes", label: "Affectés aujourd’hui", value: affectes, display: int(affectes), href: "/app/planning" },
+    ...(presence.allowed ? [{ key: "onsite", label: "Sur site aujourd’hui", value: presence.onsite, display: int(presence.onsite), href: "/app/collaborateurs?presence=ONSITE", hint: `sur ${int(presence.total)} collaborateurs` } satisfies Kpi, { key: "remote", label: "À distance aujourd’hui", value: presence.remote, display: int(presence.remote), href: "/app/collaborateurs?presence=REMOTE", hint: presence.absent ? `${int(presence.absent)} absent(s)` : "Aucune absence" } satisfies Kpi] : []),
     { key: "actives", label: "Missions actives", value: projects.filter((p) => p.status === "ACTIVE").length, display: int(projects.filter((p) => p.status === "ACTIVE").length), href: "/app/missions?statut=ACTIVE" },
     { key: "avenir", label: "Missions à venir", value: projects.filter((p) => p.status === "A_VENIR").length, display: int(projects.filter((p) => p.status === "A_VENIR").length), href: "/app/missions?statut=A_VENIR" },
     { key: "attente", label: "En attente de staffing", value: projects.filter((p) => p.status === "EN_ATTENTE_STAFFING").length, display: int(projects.filter((p) => p.status === "EN_ATTENTE_STAFFING").length), href: "/app/missions?statut=EN_ATTENTE_STAFFING", tone: projects.some((p) => p.status === "EN_ATTENTE_STAFFING") ? "alert" : "neutral" },
     { key: "planned", label: "Utilisation planifiée", value: grp.planned, display: pct(grp.planned), hint: PERIOD_LABEL[f.period], spark: trend.map((t) => t.planned), href: "/app/analytics?rapport=utilisation-employe" },
-    { key: "real", label: "Utilisation réelle", value: real?.real ?? 0, display: real ? pct(real.real) : "—", hint: real ? "Heures validées" : "Non applicable à l’avenir", spark: trend.map((t) => t.real), href: "/app/analytics?rapport=utilisation-employe" },
-    { key: "billing", label: "Taux de facturabilité", value: real?.billability ?? 0, display: real ? pct(real.billability) : "—", hint: "Heures facturables validées", spark: trend.map((t) => t.billable), href: "/app/analytics?rapport=facturabilite" },
     { key: "under", label: "Sous-occupés", value: under, display: int(under), tone: under ? "alert" : "ok", href: "/app/collaborateurs?view=sous-occupes", hint: "4 prochaines semaines" },
     { key: "over", label: "Surchargés", value: over, display: int(over), tone: over ? "conflict" : "ok", href: "/app/collaborateurs?view=surcharges", hint: "4 prochaines semaines" },
     { key: "open", label: "Demandes ouvertes", value: requests.length, display: int(requests.length), href: "/app/demandes" },
@@ -99,7 +97,7 @@ export function executive(s: AppState, f: DashFilters) {
   const missionsByStatus = statuses.map(([k, label]) => ({ label, value: projects.filter((p) => p.status === k).length }));
   const forecast = forecastByGrade(s, { from: s.now, horizonMonths: 3, departmentId: f.dept }).map((g) => ({ label: g.gradeName, supply: Math.round(g.supplyFte * 10) / 10, demand: Math.round(g.demandFte * 10) / 10, deficit: g.deficitPersons }));
   const availSlices = (["LIBRE", "PARTIELLE", "PLEINE", "SURCHARGEE", "INDISPONIBLE"] as Availability[]).map((k) => ({ label: { LIBRE: "Libre", PARTIELLE: "Partielle", PLEINE: "Pleine", SURCHARGEE: "Surchargée", INDISPONIBLE: "Indisponible" }[k], value: avail[k] })).filter((x) => x.value);
-  return { kpis, trend, byGrade, byDept, availSlices, workload, missionsByStatus, forecast, from, to, headcount: emps.length, underIds, overIds };
+  return { kpis, trend, presence, byGrade, byDept, availSlices, workload, missionsByStatus, forecast, from, to, headcount: emps.length, underIds, overIds };
 }
 
 export const OPEN_REQUEST_STATUSES = OPEN;
@@ -117,11 +115,11 @@ export function resourceManager(s: AppState) {
   const byStatus = ["SOUMISE", "EN_ANALYSE", "PROPOSITION_ENVOYEE", "EN_ATTENTE_VALIDATION"].map((k) => ({ status: k as StaffingRequest["status"], count: queue.filter((r) => r.status === k).length }));
   const conflicts = findPlanConflicts(s);
   const expiring = s.assignments.filter((a) => a.status === "SOFT" && a.softExpiresAt && a.softExpiresAt <= addDays(s.now, 7)).sort((a, b) => (a.softExpiresAt ?? "").localeCompare(b.softExpiresAt ?? ""));
-  const pendingLeaves = s.leaves.filter((l) => l.status === "SOUMISE");
   const emps = scopedEmployees(s);
+  const presence = presenceSummary(s, emps);
   const ahead = { from: s.now, to: addDays(s.now, 27) };
   const rows = emps.map((e) => ({ e, planned: utilizationOf(s, e, ahead.from, ahead.to).planned })).map((x) => ({ ...x, st: statusOf(s, x.e, x.planned) }));
-  return { queue, byStatus, urgent: queue.filter((r) => r.priority === "URGENTE"), conflicts, unstaffed: unstaffedMissions(s), expiring, pendingLeaves, under: rows.filter((x) => x.st === "UNDER"), over: rows.filter((x) => x.st === "OVER") };
+  return { queue, byStatus, urgent: queue.filter((r) => r.priority === "URGENTE"), conflicts, unstaffed: unstaffedMissions(s), expiring, presence, under: rows.filter((x) => x.st === "UNDER"), over: rows.filter((x) => x.st === "OVER") };
 }
 
 export function teamDashboard(s: AppState) {
@@ -130,7 +128,7 @@ export function teamDashboard(s: AppState) {
   const rows = emps.map((e) => ({ e, weeks: weeks.map((w) => Math.round(utilizationOf(s, e, w, addDays(w, 6), { includeSoft: true }).planned)) }));
   const myId = sessionUser(s)?.employeeId;
   const myProjects = s.projects.filter((p) => (p.leadId === myId || canDo(s, "project.edit", { projectId: p.id })) && p.status !== "TERMINEE" && p.status !== "ANNULEE").map((p) => ({ project: p, cov: projectCoverage(s, p.id) }));
-  return { rows, weeks, myProjects, waitingSheets: s.timesheets.filter((t) => t.status === "SOUMIS" && canDo(s, "timesheet.validate", { employeeId: t.employeeId })).length, pendingLeaves: s.leaves.filter((l) => l.status === "SOUMISE" && canDo(s, "leave.approve", { employeeId: l.employeeId })) };
+  return { rows, weeks, myProjects, presence: presenceSummary(s, emps) };
 }
 
 export function hrDashboard(s: AppState) {
@@ -138,7 +136,7 @@ export function hrDashboard(s: AppState) {
   const certs = s.employeeCertifications.filter((c) => c.expiresAt >= s.now && c.expiresAt <= limit).sort((a, b) => a.expiresAt.localeCompare(b.expiresAt));
   const byContract = ["CDI", "CDD", "STAGE", "CONSULTANT"].map((c) => ({ label: c, value: s.employees.filter((e) => e.contract === c && e.status !== "ARCHIVE").length }));
   const ending = s.employees.filter((e) => e.endDate && e.status !== "ARCHIVE" && e.endDate <= addDays(s.now, 120)).sort((a, b) => (a.endDate ?? "").localeCompare(b.endDate ?? ""));
-  return { certs, pendingLeaves: s.leaves.filter((l) => l.status === "SOUMISE"), archived: s.employees.filter((e) => e.status === "ARCHIVE").length, active: s.employees.filter((e) => e.status !== "ARCHIVE").length, byContract, ending, pendingValidation: s.employeeSkills.filter((x) => !x.validatedById).length };
+  return { certs, presence: presenceSummary(s, scopedEmployees(s)), archived: s.employees.filter((e) => e.status === "ARCHIVE").length, active: s.employees.filter((e) => e.status !== "ARCHIVE").length, byContract, ending, pendingValidation: s.employeeSkills.filter((x) => !x.validatedById).length };
 }
 
 export function myWeek(s: AppState) {
@@ -147,18 +145,14 @@ export function myWeek(s: AppState) {
   const ws = weekStart(s.now);
   const we = addDays(ws, 6);
   const mine = s.assignments.filter((a) => a.employeeId === empId && (a.status === "HARD" || a.status === "SOFT") && a.startDate <= we && a.endDate >= ws);
-  const ts = s.timesheets.filter((t) => t.employeeId === empId).sort((a, b) => b.weekStart.localeCompare(a.weekStart));
   const emp = s.employees.find((e) => e.id === empId);
   return {
     emp,
     week: { from: ws, to: we },
     assignments: mine,
-    timesheets: ts.slice(0, 3),
-    todo: ts.filter((t) => t.status === "BROUILLON" || t.status === "REJETE" || t.status === "CORRECTION_DEMANDEE"),
-    leaves: s.leaves.filter((l) => l.employeeId === empId && (l.status === "SOUMISE" || l.status === "BROUILLON")),
-    opportunities: s.opportunities.filter((o) => o.status === "OUVERTE" && o.deadline >= s.now),
     certs: s.employeeCertifications.filter((c) => c.employeeId === empId && c.expiresAt <= addDays(s.now, 60)),
     util: emp ? utilizationOf(s, emp, monthStart(s.now), monthEnd(s.now)) : undefined,
+    presenceWeek: emp ? presenceWeeks(s, emp, 1)[0] ?? [] : [],
   };
 }
 

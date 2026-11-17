@@ -1,5 +1,4 @@
 import { projectCoverage, requirementCoverage, type Coverage } from "../../engine/booking";
-import { validatedHours } from "../../engine/utilization";
 import { plannedHoursFor } from "../../engine/capacity";
 import type { AppState, Assignment, AuditLog, Employee, StaffingRequirement } from "../types";
 import { canDo, visibleProjects, type ProjectView } from "./core";
@@ -52,23 +51,6 @@ export function missionTeam(s: AppState, projectId: string): TeamRow[] {
     .sort((x, y) => (s.grades.find((g) => g.name === y.grade)?.rank ?? 0) - (s.grades.find((g) => g.name === x.grade)?.rank ?? 0));
 }
 export const requirementsOf = (s: AppState, projectId: string): { req: StaffingRequirement; cov: Coverage }[] => s.requirements.filter((r) => r.projectId === projectId).map((req) => ({ req, cov: requirementCoverage(s, req) }));
-
-/** Validated hours per person on this mission (spec 8.3 « Timesheets »). */
-export function missionTimesheets(s: AppState, projectId: string) {
-  const byEmp = new Map<string, { hours: number; billable: number }>();
-  const valid = new Map(s.timesheets.filter((t) => t.status === "VALIDE").map((t) => [t.id, t.employeeId]));
-  for (const e of s.entries) {
-    if (e.projectId !== projectId) continue;
-    const emp = valid.get(e.timesheetId);
-    if (!emp) continue;
-    const cur = byEmp.get(emp) ?? { hours: 0, billable: 0 };
-    cur.hours += e.hours;
-    if (e.billable) cur.billable += e.hours;
-    byEmp.set(emp, cur);
-  }
-  return [...byEmp.entries()].map(([employeeId, v]) => ({ employeeId, ...v })).sort((a, b) => b.hours - a.hours);
-}
-void validatedHours;
 
 /** Budget & cost: only for viewers allowed to see both finance and employee costs. */
 export function missionCosts(s: AppState, projectId: string) {

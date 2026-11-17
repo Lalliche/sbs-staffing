@@ -1,9 +1,8 @@
 /* Deterministic seed (spec 9). Same input → same state. Four scenarios (spec 4). */
 import { plannedHoursFor } from "../../engine/capacity";
-import { addDays, weekStart } from "../../engine/dates";
 import { blankState } from "../blank";
 import type { AppState, Assignment, Scenario } from "../types";
-import { seedLeaves, seedEvaluations, seedMarketplace, seedNotificationsAndAudit, seedRequests, seedTimesheets } from "./activity";
+import { seedLeaves, seedNotificationsAndAudit, seedRequests, seedWorkModes } from "./activity";
 import { buildAssignments, buildMissions, documentsFor, pipelineBase, projectId } from "./missions";
 import { buildPeople, users } from "./people";
 import { certifications, clients, departments, grades, holidays, offices, skillCategories, skills } from "./referentials";
@@ -41,21 +40,14 @@ export function buildSeed(scenario: Scenario = 2, keepUserId: string | null = nu
   });
   s.pipeline = structuredClone(pipelineBase);
   s.requests = seedRequests();
-  s.evaluations = seedEvaluations();
-  Object.assign(s, seedMarketplace());
+  s.workModes = seedWorkModes();
   s.documents = documentsFor(s.projects);
 
   applyScenario(s, scenario);
 
-  const toWeek = addDays(weekStart(s.now), -7);
-  const weeks = scenario === 1 ? 3 : 8;
-  const ts = seedTimesheets(s, addDays(toWeek, -(weeks - 1) * 7), toWeek);
-  s.timesheets = ts.timesheets;
-  s.entries = ts.entries;
-
   seedNotificationsAndAudit(s);
   s.users.forEach((u) => {
-    s.notificationPrefs[u.id] = Object.fromEntries(["REQUEST", "ASSIGNMENT", "MISSION", "MARKETPLACE", "LEAVE", "TIMESHEET", "CONFLICT", "OVERLOAD", "CERTIFICATION", "UNSTAFFED"].map((k) => [k, { inApp: true, email: ["REQUEST", "TIMESHEET", "CERTIFICATION"].includes(k) }]));
+    s.notificationPrefs[u.id] = Object.fromEntries(["REQUEST", "ASSIGNMENT", "MISSION", "CONFLICT", "OVERLOAD", "CERTIFICATION", "UNSTAFFED"].map((k) => [k, { inApp: true, email: ["REQUEST", "TIMESHEET", "CERTIFICATION"].includes(k) }]));
   });
   s.session.userId = keepUserId;
   return s;
@@ -96,7 +88,7 @@ function applyScenario(s: AppState, scenario: Scenario) {
       r.priority = "URGENTE";
       if (r.status === "BROUILLON") r.status = "SOUMISE";
     });
-    s.leaves.push({ id: "lv-90", employeeId: "e07", type: "CONGE_ANNUEL", startDate: "2026-12-20", endDate: "2027-01-03", status: "SOUMISE", createdAt: "2026-11-14" }, { id: "lv-91", employeeId: "e37", type: "FORMATION", startDate: "2027-01-10", endDate: "2027-01-14", status: "APPROUVEE", approverId: "e36", createdAt: "2026-11-10" });
+    s.leaves.push({ id: "lv-90", employeeId: "e07", type: "CONGE_ANNUEL", startDate: "2026-12-20", endDate: "2027-01-03", status: "APPROUVEE", approverId: "e36", createdAt: "2026-11-14" }, { id: "lv-91", employeeId: "e37", type: "FORMATION", startDate: "2027-01-10", endDate: "2027-01-14", status: "APPROUVEE", approverId: "e36", createdAt: "2026-11-10" });
     s.pipeline.push({ id: "pl-7", name: "Contrôle de gestion — Groupe R", clientLabel: "Groupe R", departmentId: "d-aud", sector: "Industrie", certainty: "CONFIRMEE", startDate: "2027-01-10", endDate: "2027-04-30", needs: [{ gradeId: "g-3", quantity: 2, skillIds: ["sk-audit-fin"], allocationPct: 100 }, { gradeId: "g-4", quantity: 1, skillIds: ["sk-audit-fin"], allocationPct: 60 }] });
   }
   if (scenario === 4) {

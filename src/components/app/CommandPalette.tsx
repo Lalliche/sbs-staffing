@@ -1,5 +1,5 @@
 "use client";
-import { CalendarPlus, ClipboardList, CornerDownLeft, FilePlus2, Search, Sparkles, UserRound, Users, Network } from "lucide-react";
+import { ClipboardList, CornerDownLeft, FilePlus2, Search, Sparkles, UserRound, Users } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
@@ -7,9 +7,9 @@ import { AnimatePresence, motion } from "motion/react";
 import { cn } from "@/lib/utils";
 import { overlayFade, popIn } from "@/lib/motion-tokens";
 import { useSession } from "@/lib/store/hooks";
-import { visibleEmployees, visibleProjects, visibleRequests } from "@/lib/store/selectors/core";
+import { isSelfView, visibleEmployees, visibleProjects, visibleRequests } from "@/lib/store/selectors/core";
 import { Avatar } from "@/components/ui/Avatar";
-import { canSee, NAV } from "./nav-config";
+import { canSee, resolveNav } from "./nav-config";
 import { useShell } from "./ShellContext";
 
 interface Cmd {
@@ -21,7 +21,7 @@ interface Cmd {
   run: () => void;
 }
 
-/** Global search ⌘K: people, missions, requests, skills, pages and actions — limited to what the viewer may see (spec 8.17). */
+/** Global search ⌘K: people, missions, requests, pages and actions — limited to what the viewer may see (spec 8.17). */
 export function CommandPalette({ open, onClose }: { open: boolean; onClose: () => void }) {
   const { s, me, can } = useSession();
   const router = useRouter();
@@ -36,12 +36,10 @@ export function CommandPalette({ open, onClose }: { open: boolean; onClose: () =
     if (can("ai.use")) list.push({ id: "a-ai", group: "Actions", label: "Demander à SBS Staffing Intelligence", icon: <Sparkles className="size-4" />, run: () => shell.openAssistant() });
     if (can("project.create")) list.push({ id: "a-mission", group: "Actions", label: "Créer une mission", icon: <FilePlus2 className="size-4" />, run: go("/app/missions?nouveau=1") });
     if (can("request.create")) list.push({ id: "a-req", group: "Actions", label: "Créer une demande de staffing", icon: <ClipboardList className="size-4" />, run: go("/app/demandes?nouveau=1") });
-    if (can("leave.request")) list.push({ id: "a-leave", group: "Actions", label: "Poser un congé", icon: <CalendarPlus className="size-4" />, run: go("/app/disponibilites?nouveau=1") });
-    NAV.forEach((g) => g.items.filter((i) => canSee(i, can)).forEach((i) => list.push({ id: `p-${i.key}`, group: "Pages", label: i.label, hint: g.label, icon: <i.icon className="size-4" />, run: go(i.href) })));
+    resolveNav(isSelfView(s)).forEach((g) => g.items.filter((i) => canSee(i, can)).forEach((i) => list.push({ id: `p-${i.key}`, group: "Pages", label: i.label, hint: g.label, icon: <i.icon className="size-4" />, run: go(i.href) })));
     visibleEmployees(s).forEach((e) => list.push({ id: `e-${e.id}`, group: "Personnes", label: `${e.firstName} ${e.lastName}`, hint: e.jobTitle, icon: <Avatar person={e} size="xs" />, run: go(`/app/collaborateurs/${e.id}`) }));
     visibleProjects(s).forEach((p) => list.push({ id: `m-${p.id}`, group: "Missions", label: p.name, hint: p.reference, icon: <ClipboardList className="size-4" />, run: go(`/app/missions/${p.id}`) }));
     visibleRequests(s).forEach((r) => list.push({ id: `r-${r.id}`, group: "Demandes", label: r.reference, hint: s.projects.find((p) => p.id === r.projectId)?.name, icon: <Users className="size-4" />, run: go(`/app/demandes/${r.id}`) }));
-    if (can("skill.view")) s.skills.forEach((k) => list.push({ id: `k-${k.id}`, group: "Compétences", label: k.name, hint: s.skillCategories.find((c) => c.id === k.categoryId)?.name, icon: <Network className="size-4" />, run: go(`/app/competences?q=${encodeURIComponent(k.name)}`) }));
     return list;
   }, [s, me, can, router, shell]);
 

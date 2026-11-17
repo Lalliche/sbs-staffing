@@ -6,8 +6,10 @@ import { candidatePool, rankCandidates } from "../engine/matching";
 import { addDays, addMonths, monthEnd, monthStart } from "../engine/dates";
 import { fmtDec, fmtHours, fmtMonth, fmtPct } from "../engine/format";
 import { statusOf, utilizationOf, utilizationOfGroup } from "../engine/utilization";
+import { presenceOn } from "../engine/workmode";
 import { availabilityOf } from "../store/selectors/people";
 import { canDo, sessionUser } from "../store/selectors/core";
+import { presenceSummary } from "../store/selectors/presence";
 import { lastClosedWeekEnd, scopedEmployees, unstaffedMissions } from "../store/selectors/dashboard";
 import type { AppState, Employee } from "../store/types";
 import type { AiAnswer, IntentId } from "./types";
@@ -25,7 +27,8 @@ export const SUGGESTIONS = [
   "Quel département est le plus surchargé ?",
   "Quelles missions ne sont pas staffées ?",
   "Quelles compétences sont insuffisantes ?",
-  "Quel est le taux d’utilisation réel ?",
+  "Qui est sur site aujourd’hui ?",
+  "Quel est le taux d’utilisation ?",
 ];
 
 function detectIntent(n: string): IntentId {
@@ -37,7 +40,8 @@ function detectIntent(n: string): IntentId {
   if (has(n, "plus surcharge", "surcharge", "surcharges", "surcharges") && has(n, "departement", "departements")) return "overloaded_dept";
   if (has(n, "pas staffees", "non staffees", "sans equipe", "a staffer", "non staffe", "missions non staffees", "staffees") && has(n, "mission", "missions")) return "unstaffed";
   if (has(n, "competences insuffisantes", "competence insuffisante", "manque de competences", "competences manquantes", "deficit de competences", "competences") && has(n, "insuffisantes", "manquantes", "deficit", "insuffisante", "gap")) return "skills_gap";
-  if (has(n, "taux d utilisation", "utilisation", "facturabilite", "utilises")) return "utilization";
+  if (has(n, "sur site", "presentiel", "a distance", "teletravail", "en remote", "remote", "qui travaille", "au bureau")) return "presence";
+  if (has(n, "taux d utilisation", "utilisation", "utilises")) return "utilization";
   if (has(n, "risque", "risques", "alerte", "alertes", "prevision", "previsions", "deficit", "deficits", "recrutement", "recruter")) return "risks";
   if (has(n, "qui est disponible", "disponibles", "disponibilites", "disponibilite", "disponible") ) return has(n, "mois prochain", "semaine prochaine", "prochain") || has(n, "qui") ? "who_available" : "who_available";
   if (has(n, "aide", "que sais tu faire", "que peux tu faire", "exemples")) return "help";
@@ -45,7 +49,7 @@ function detectIntent(n: string): IntentId {
 }
 
 const refuse = (text: string, intent: IntentId): AiAnswer => ({ kind: "refusal", intent, text, figures: [], source: "Contrôle d’accès : l’assistant lit uniquement les données que vous pouvez consulter.", links: [] });
-const NO_SCOPE = "Votre profil ne permet pas d’interroger les données des autres collaborateurs. Je peux en revanche vous aider sur votre propre semaine, vos congés et vos timesheets.";
+const NO_SCOPE = "Votre profil ne permet pas d’interroger les données des autres collaborateurs. Je peux en revanche vous aider sur votre propre semaine, vos affectations.";
 
 export function answer(s: AppState, input: string): AiAnswer {
   const n = normalize(input);
@@ -134,7 +138,15 @@ export function answer(s: AppState, input: string): AiAnswer {
   if (intent === "utilization") {
     const to = lastClosedWeekEnd(s), from = addDays(to, -27);
     const g = utilizationOfGroup(s, emps, from, to);
-    return { kind: "answer", intent, title: "Taux d’utilisation", text: `Sur les 4 dernières semaines : utilisation réelle ${fmtPct(g.real)} (heures validées), planifiée ${fmtPct(g.planned)}, facturabilité ${fmtPct(g.billability)}. Ces trois mesures sont distinctes.`, figures: [{ label: "Réelle (timesheets validés)", value: fmtPct(g.real), raw: g.real }, { label: "Planifiée", value: fmtPct(g.planned), raw: g.planned }, { label: "Facturabilité", value: fmtPct(g.billability), raw: g.billability }, { label: "Heures validées", value: fmtHours(g.worked) }], source: src(`${from} → ${to}, heures validées ÷ capacité théorique (${fmtHours(g.theoretical)}).`), links: [{ label: "Tableau de bord", href: "/app/accueil" }] };
+    return { kind: "answer", intent, title: "Taux d’utilisation", text: `Sur les 4 dernières semaines, l’utilisation planifiée est de ${fmtPct(g.planned)} : heures affectées confirmées ÷ capacité théorique.`, figures: [{ label: "Planifiée", value: fmtPct(g.planned), raw: g.planned }, { label: "Heures affectées", value: fmtHours(g.assigned) }, { label: "Capacité théorique", value: fmtHours(g.theoretical) }], source: src(`${from} → ${to}, heures affectées confirmées ÷ capacité théorique (${fmtHours(g.theoretical)}).`), links: [{ label: "Tableau de bord", href: "/app/accueil" }] };
+  }
+
+  if (intent === "presence") {
+    if (!canDo(s, "workmode.view")) return refuse("Votre profil n’a pas accès à la présence des collaborateurs.", intent);
+    const p = presenceSummary(s, emps);
+    const names = (mode: "ONSITE" | "REMOTE") => emps.filter((e) => presenceOn(s, e, s.now) === mode).map((e) => `${e.firstName} ${e.lastName}`);
+    const remote = names("REMOTE");
+    return { kind: "answer", intent, title: "Présence aujourd’hui", text: `Aujourd’hui, ${p.onsite} collaborateur(s) sont en présentiel et ${p.remote} à distance${p.absent ? `, ${p.absent} absent(s)` : ""}.`, figures: [{ label: "Présentiel", value: String(p.onsite), raw: p.onsite }, { label: "À distance", value: String(p.remote), raw: p.remote }, { label: "Absents", value: String(p.absent), raw: p.absent }], table: remote.length ? { caption: "À distance aujourd’hui", columns: [{ key: "n", label: "Collaborateur" }], rows: remote.slice(0, 8).map((n) => ({ cells: { n } })) } : undefined, source: src("habitudes hebdomadaires et exceptions déclarées, absences approuvées déduites."), links: [{ label: "Voir le planning", href: "/app/planning" }, { label: "Collaborateurs", href: "/app/collaborateurs?presence=REMOTE" }] };
   }
 
   if (intent === "risks") {

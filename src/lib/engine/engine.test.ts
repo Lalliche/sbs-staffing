@@ -1,18 +1,17 @@
 import { describe, expect, it } from "vitest";
 import { addDays, addMonths, diffDays, dow, weekNumber, weekStart } from "./dates";
 import { absenceHours, assignedHours, availableHours, dayLoads, plannedHoursFor, reservedHours, theoreticalHours } from "./capacity";
-import { utilizationOf, utilizationOfGroup, utilizationStatus, validatedHours } from "./utilization";
+import { utilizationOf, utilizationOfGroup, utilizationStatus } from "./utilization";
 import { checkBooking, findPlanConflicts, hasBlockingConflict } from "./conflicts";
 import { evaluateBooking, expiredSoftBookings, projectCoverage, requirementCoverage, conflictsForConversion } from "./booking";
 import { rankCandidates, requirementLike, scoreCandidate } from "./matching";
-import { annualLeaveTaken, impactedAssignments, leaveWorkingDays, overlappingLeaves } from "./leave";
-import { anomalies, canTransition, isEditable, isLocked } from "./timesheet";
+import { plannedModeOn, presenceCount, presenceDays, presenceOn, presenceRange } from "./workmode";
 import { deficitLabel, forecastByGrade, forecastBySkill, recruitmentNeeds } from "./forecast";
 import { DEFAULT_ROLE_PERMISSIONS, can, inScope } from "./permissions";
 import { diffFields, writeAudit } from "./audit";
 import { fmtDZD, fmtHours, fmtPct } from "./format";
 import { assignment, baseState, emp, leave, project, requirement } from "./testkit";
-import type { AppState, Timesheet, TimesheetEntry, User } from "../store/types";
+import type { AppState, User } from "../store/types";
 
 /* Calendar reminder: 2026-11-15 is a Sunday; the office works Sunday→Thursday (5 days/week, 8 h/day at 40 h). */
 
@@ -91,15 +90,11 @@ describe("capacity (7.1)", () => {
   });
 });
 
-describe("utilization (7.2): planned ≠ real ≠ billable", () => {
+describe("utilization (7.2): planned = confirmed hours ÷ theoretical capacity", () => {
   function setup() {
     const s = baseState();
     s.employees = [emp({ id: "e1" })];
     s.assignments = [assignment({ id: "a1", employeeId: "e1", startDate: "2026-11-15", endDate: "2026-11-19", allocationPct: 50 }), assignment({ id: "a2", employeeId: "e1", startDate: "2026-11-15", endDate: "2026-11-19", allocationPct: 25, status: "SOFT" })];
-    const ts = (id: string, status: Timesheet["status"]): Timesheet => ({ id, employeeId: "e1", weekStart: "2026-11-15", status, corrections: [] });
-    s.timesheets = [ts("t1", "VALIDE"), ts("t2", "SOUMIS")];
-    const en = (id: string, tsId: string, hours: number, billable: boolean): TimesheetEntry => ({ id, timesheetId: tsId, projectId: "p1", date: "2026-11-16", hours, billable, activityType: "REALISATION", description: "" });
-    s.entries = [en("x1", "t1", 20, true), en("x2", "t1", 6, false), en("x3", "t2", 8, true)];
     return s;
   }
   it("planned counts HARD only by default, SOFT on request", () => {
@@ -107,14 +102,6 @@ describe("utilization (7.2): planned ≠ real ≠ billable", () => {
     const u = utilizationOf(s, s.employees[0], "2026-11-15", "2026-11-19");
     expect(u.planned).toBeCloseTo(50);
     expect(utilizationOf(s, s.employees[0], "2026-11-15", "2026-11-19", { includeSoft: true }).planned).toBeCloseTo(75);
-  });
-  it("real uses VALIDATED timesheets only; billability uses the billable flag", () => {
-    const s = setup();
-    const u = utilizationOf(s, s.employees[0], "2026-11-15", "2026-11-19");
-    expect(validatedHours(s, "e1", "2026-11-15", "2026-11-19")).toEqual({ worked: 26, billable: 20 });
-    expect(u.real).toBeCloseTo(65); // 26 / 40
-    expect(u.billability).toBeCloseTo(50); // 20 / 40
-    expect(u.planned).not.toBeCloseTo(u.real);
   });
   it("group utilization is Σ hours / Σ capacity, not a mean of percentages", () => {
     const s = setup();
@@ -353,13 +340,7 @@ describe("matching score (7.3)", () => {
   });
 });
 
-describe("leave workflow (7.6)", () => {
-  it("working days of a leave exclude weekends and holidays", () => {
-    const s = baseState();
-    s.employees = [emp({ id: "e1" })];
-    s.holidays = [{ id: "h", date: "2026-11-18", name: "Férié", officeId: null }];
-    expect(leaveWorkingDays(s, { employeeId: "e1", startDate: "2026-11-15", endDate: "2026-11-26" })).toBe(9);
-  });
+describe("absences feed availability", () => {
   it("approval removes the person from the candidate pool (availability recomputed)", () => {
     const s = baseState();
     s.projects = [project({ id: "p1" })];
@@ -372,62 +353,6 @@ describe("leave workflow (7.6)", () => {
     const after = scoreCandidate(s, s.employees[0], r);
     expect(after.compatible).toBe(false);
     expect(after.blocking[0].kind).toBe("UNAVAILABLE");
-  });
-  it("impacted assignments and overlaps are detected before approval", () => {
-    const s = baseState();
-    s.employees = [emp({ id: "e1" })];
-    s.assignments = [assignment({ id: "a1", employeeId: "e1" })];
-    s.leaves = [leave({ id: "l0", employeeId: "e1", startDate: "2026-11-16", endDate: "2026-11-17" })];
-    const l = { id: "l1", employeeId: "e1", startDate: "2026-11-17", endDate: "2026-11-19" };
-    expect(impactedAssignments(s, l).map((a) => a.id)).toEqual(["a1"]);
-    expect(overlappingLeaves(s, l).map((x) => x.id)).toEqual(["l0"]);
-  });
-  it("annual leave consumed is counted in working days, clipped to the year", () => {
-    const s = baseState();
-    s.employees = [emp({ id: "e1" })];
-    s.leaves = [leave({ id: "l1", employeeId: "e1", startDate: "2026-11-15", endDate: "2026-11-19" })];
-    expect(annualLeaveTaken(s, "e1", 2026)).toBe(5);
-    expect(annualLeaveTaken(s, "e1", 2027)).toBe(0);
-  });
-});
-
-describe("timesheets (7.7)", () => {
-  it("state machine: validated sheets are locked; only the traced correction reopens", () => {
-    expect(canTransition("BROUILLON", "SOUMIS")).toBe(true);
-    expect(canTransition("SOUMIS", "VALIDE")).toBe(true);
-    expect(canTransition("SOUMIS", "REJETE")).toBe(true);
-    expect(canTransition("REJETE", "SOUMIS")).toBe(true);
-    expect(canTransition("VALIDE", "SOUMIS")).toBe(false);
-    expect(canTransition("VALIDE", "BROUILLON")).toBe(false);
-    expect(canTransition("VALIDE", "CORRECTION_DEMANDEE")).toBe(true);
-    expect(isLocked({ status: "VALIDE" })).toBe(true);
-    expect(isLocked({ status: "SOUMIS" })).toBe(true);
-    expect(isEditable({ status: "BROUILLON" })).toBe(true);
-    expect(isEditable({ status: "CORRECTION_DEMANDEE" })).toBe(true);
-  });
-  it("detects hours on a leave day, > daily max, > weekly max and unassigned missions", () => {
-    const s = baseState();
-    s.employees = [emp({ id: "e1" })];
-    s.assignments = [assignment({ id: "a1", employeeId: "e1", projectId: "pA", startDate: "2026-11-08", endDate: "2026-11-19" })];
-    s.leaves = [leave({ id: "l1", employeeId: "e1", startDate: "2026-11-17", endDate: "2026-11-17" })];
-    const ts: Timesheet = { id: "t1", employeeId: "e1", weekStart: "2026-11-15", status: "SOUMIS", corrections: [] };
-    s.timesheets = [ts];
-    const en = (id: string, date: string, hours: number, projectId: string): TimesheetEntry => ({ id, timesheetId: "t1", projectId, date, hours, billable: true, activityType: "REALISATION", description: "" });
-    s.entries = [en("1", "2026-11-15", 11, "pA"), en("2", "2026-11-16", 8, "pA"), en("3", "2026-11-17", 8, "pA"), en("4", "2026-11-18", 8, "pZ"), en("5", "2026-11-19", 8, "pA"), en("6", "2026-11-19", 8, "INT-ADM")];
-    const kinds = anomalies(s, ts).map((a) => a.kind);
-    expect(kinds).toContain("DAILY_MAX");
-    expect(kinds).toContain("ON_LEAVE");
-    expect(kinds).toContain("NOT_ASSIGNED");
-    expect(kinds).toContain("WEEKLY_MAX");
-  });
-  it("a clean sheet has no anomaly", () => {
-    const s = baseState();
-    s.employees = [emp({ id: "e1" })];
-    s.assignments = [assignment({ id: "a1", employeeId: "e1", projectId: "pA", startDate: "2026-11-08", endDate: "2026-11-19" })];
-    const ts: Timesheet = { id: "t1", employeeId: "e1", weekStart: "2026-11-15", status: "BROUILLON", corrections: [] };
-    s.timesheets = [ts];
-    s.entries = ["2026-11-15", "2026-11-16", "2026-11-17", "2026-11-18", "2026-11-19"].map((d, i) => ({ id: `${i}`, timesheetId: "t1", projectId: "pA", date: d, hours: 8, billable: true, activityType: "REALISATION" as const, description: "" }));
-    expect(anomalies(s, ts)).toEqual([]);
   });
 });
 
@@ -537,11 +462,13 @@ describe("RBAC (3.3)", () => {
     expect(DEFAULT_ROLE_PERMISSIONS.ADMIN.includes("admin.roles")).toBe(false);
     expect(can(s, admin, "does.not.exist")).toBe(false);
   });
-  it("only roles with the permission can read confidential evaluations", () => {
+  it("work mode: everyone sees presence, managers and the person themselves can edit it", () => {
     const { s, collab, rh, manager } = users();
-    expect(can(s, rh, "evaluation.confidential.read")).toBe(true);
-    expect(can(s, collab, "evaluation.confidential.read")).toBe(false);
-    expect(can(s, manager, "evaluation.confidential.read")).toBe(false);
+    expect(can(s, collab, "workmode.view")).toBe(true);
+    expect(can(s, collab, "workmode.edit", { employeeId: collab.employeeId! })).toBe(true);
+    expect(can(s, collab, "workmode.edit", { employeeId: "someone-else" })).toBe(false);
+    expect(can(s, rh, "workmode.edit")).toBe(true);
+    expect(can(s, manager, "workmode.view")).toBe(true);
   });
 });
 
@@ -564,5 +491,61 @@ describe("format (fr-FR)", () => {
     expect(fmtDZD(1234567)).toBe("1 234 567 DZD");
     expect(fmtPct(85)).toBe("85 %");
     expect(fmtHours(37.5)).toBe("37,5 h");
+  });
+});
+
+describe("work mode — présentiel / à distance", () => {
+  function setup() {
+    const s = baseState();
+    // 2026-11-15 is a Sunday. Tuesdays (2) are remote for e1; e2 has no usual remote day.
+    s.employees = [emp({ id: "e1", remoteWeekdays: [2] }), emp({ id: "e2" })];
+    return s;
+  }
+  it("follows the usual weekly pattern", () => {
+    const s = setup();
+    expect(presenceOn(s, s.employees[0], "2026-11-15")).toBe("ONSITE");
+    expect(presenceOn(s, s.employees[0], "2026-11-17")).toBe("REMOTE");
+    expect(presenceOn(s, s.employees[1], "2026-11-17")).toBe("ONSITE");
+  });
+  it("a one-day override beats the pattern, in both directions", () => {
+    const s = setup();
+    s.workModes = [
+      { id: "w1", employeeId: "e1", date: "2026-11-17", mode: "ONSITE" },
+      { id: "w2", employeeId: "e2", date: "2026-11-18", mode: "REMOTE" },
+    ];
+    expect(presenceOn(s, s.employees[0], "2026-11-17")).toBe("ONSITE");
+    expect(presenceOn(s, s.employees[1], "2026-11-18")).toBe("REMOTE");
+    expect(plannedModeOn(s, s.employees[1], "2026-11-19")).toBe("ONSITE");
+  });
+  it("weekends, holidays and days outside the contract are OFF; approved absences are ABSENT", () => {
+    const s = setup();
+    s.holidays = [{ id: "h", date: "2026-11-16", name: "Férié", officeId: null }];
+    s.leaves = [leave({ id: "l1", employeeId: "e1", startDate: "2026-11-18", endDate: "2026-11-18" })];
+    expect(presenceOn(s, s.employees[0], "2026-11-20")).toBe("OFF"); // Friday
+    expect(presenceOn(s, s.employees[0], "2026-11-16")).toBe("OFF"); // holiday
+    expect(presenceOn(s, s.employees[0], "2026-11-18")).toBe("ABSENT");
+    s.leaves[0].status = "SOUMISE";
+    expect(presenceOn(s, s.employees[0], "2026-11-18")).toBe("ONSITE"); // a pending request is not an absence
+  });
+  it("an override on a day off or during an absence changes nothing visible", () => {
+    const s = setup();
+    s.leaves = [leave({ id: "l1", employeeId: "e1", startDate: "2026-11-18", endDate: "2026-11-18" })];
+    s.workModes = [{ id: "w1", employeeId: "e1", date: "2026-11-18", mode: "REMOTE" }, { id: "w2", employeeId: "e1", date: "2026-11-20", mode: "REMOTE" }];
+    expect(presenceOn(s, s.employees[0], "2026-11-18")).toBe("ABSENT");
+    expect(presenceOn(s, s.employees[0], "2026-11-20")).toBe("OFF");
+  });
+  it("counts people and person-days", () => {
+    const s = setup();
+    expect(presenceCount(s, s.employees, "2026-11-17")).toEqual({ onsite: 1, remote: 1, absent: 0, off: 0 });
+    expect(presenceCount(s, s.employees, "2026-11-20")).toEqual({ onsite: 0, remote: 0, absent: 0, off: 2 });
+    const d = presenceDays(s, s.employees, "2026-11-15", "2026-11-19"); // Sun→Thu: 10 person-days, 1 remote
+    expect(d).toMatchObject({ onsite: 9, remote: 1 });
+    expect(d.remoteSharePct).toBeCloseTo(10);
+  });
+  it("presenceRange flags the days that carry an explicit override", () => {
+    const s = setup();
+    s.workModes = [{ id: "w1", employeeId: "e2", date: "2026-11-16", mode: "REMOTE" }];
+    const r = presenceRange(s, s.employees[1], "2026-11-15", "2026-11-17");
+    expect(r.map((x) => [x.date, x.presence, x.override])).toEqual([["2026-11-15", "ONSITE", false], ["2026-11-16", "REMOTE", true], ["2026-11-17", "ONSITE", false]]);
   });
 });

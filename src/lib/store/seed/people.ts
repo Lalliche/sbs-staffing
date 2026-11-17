@@ -72,6 +72,8 @@ const certHeld: [string, string, string][] = [
   ["e22", "ce-fisc", "2035-01-01"], ["e23", "ce-fisc", "2034-01-01"], ["e24", "ce-fisc", "2033-01-01"], ["e30", "ce-pm", "2028-05-31"], ["e31", "ce-data", "2027-11-30"], ["e08", "ce-ifrs", "2026-12-12"],
   ["e36", "ce-risk", "2027-06-30"], ["e29", "ce-pm", "2027-12-31"], ["e09", "ce-data", "2028-02-29"],
 ];
+/** Usual remote weekdays (0 = Sunday … 4 = Thursday): most people work one day a week from home, some two, some never. */
+const REMOTE_PATTERNS: number[][] = [[0], [], [2], [1, 3], [0, 4], [4], [], [1]];
 const sectorOf = (c: string) => [...c].map((x) => SEC[x]);
 
 export function buildPeople(): { employees: Employee[]; employeeSkills: EmployeeSkill[]; employeeCertifications: EmployeeCertification[] } {
@@ -96,6 +98,7 @@ export function buildPeople(): { employees: Employee[]; employeeSkills: Employee
       contract: contract ?? "CDI",
       weeklyHours: hours,
       workingWeekdays: weekdays,
+      remoteWeekdays: REMOTE_PATTERNS[i % REMOTE_PATTERNS.length].filter((d) => !weekdays || weekdays.includes(d)),
       startDate,
       endDate: contract === "CDD" ? "2027-03-31" : contract === "STAGE" ? "2027-02-28" : contract === "CONSULTANT" ? "2027-06-30" : undefined,
       status: "ACTIF",
@@ -153,8 +156,8 @@ export const PERSONAS = [
   { id: "u-yacine", label: "Direction générale", hint: "Indicateurs consolidés, capacité" },
   { id: "u-samira", label: "Partner · Audit", hint: "Périmètre Audit, approbations" },
   { id: "u-amine", label: "Resource Manager", hint: "Moteur de staffing, planning" },
-  { id: "u-thomas", label: "Manager · Audit", hint: "Missions, équipe, timesheets" },
-  { id: "u-sophie", label: "Ressources humaines", hint: "Collaborateurs, congés, évaluations" },
-  { id: "u-claire", label: "Collaboratrice · Senior Audit", hint: "Ma semaine, mes congés" },
-  { id: "u-lucas", label: "Collaborateur · Junior", hint: "Timesheets, marketplace" },
+  { id: "u-thomas", label: "Manager · Audit", hint: "Missions, équipe, demandes" },
+  { id: "u-sophie", label: "Ressources humaines", hint: "Collaborateurs, présence, capacité" },
+  { id: "u-claire", label: "Collaboratrice · Senior Audit", hint: "Planning, missions, mes affectations" },
+  { id: "u-lucas", label: "Collaborateur · Junior", hint: "Planning, missions" },
 ] as const;

@@ -75,6 +75,8 @@ export interface Employee {
   weeklyHours: number;
   /** Part-time: days actually worked (defaults to the office calendar). */
   workingWeekdays?: number[];
+  /** Weekdays (0 = Sunday … 6 = Saturday) usually worked remotely (« à distance »); other working days are on site. */
+  remoteWeekdays?: number[];
   startDate: ISODate;
   endDate?: ISODate;
   status: EmployeeStatus;
@@ -232,7 +234,7 @@ export interface StaffingRequest {
   history: { ts: ISODate; actorId: string; status: RequestStatus; note?: string }[];
 }
 
-/* ---------- Leave ---------- */
+/* ---------- Absences (read-only: the leave workflow was removed from the product) ---------- */
 export type LeaveType = "CONGE_ANNUEL" | "MALADIE" | "FORMATION" | "DEPLACEMENT" | "MISSION_INTERNE" | "EXCEPTIONNEL" | "TEMPS_PARTIEL";
 export type LeaveStatus = "BROUILLON" | "SOUMISE" | "APPROUVEE" | "REFUSEE";
 export interface LeaveRequest {
@@ -247,71 +249,16 @@ export interface LeaveRequest {
   createdAt: ISODate;
 }
 
-/* ---------- Timesheets ---------- */
-export type TimesheetStatus = "BROUILLON" | "SOUMIS" | "VALIDE" | "REJETE" | "CORRECTION_DEMANDEE";
-export type ActivityType = "REALISATION" | "REVUE" | "PREPARATION" | "REUNION_CLIENT" | "ADMINISTRATIF" | "FORMATION" | "DEPLACEMENT" | "COMMERCIAL";
-export interface Timesheet {
+/* ---------- Work mode (présentiel / à distance) ---------- */
+export type WorkMode = "ONSITE" | "REMOTE";
+/** One-off override of the usual pattern for a given day. */
+export interface WorkModeEntry {
   id: string;
   employeeId: string;
-  weekStart: ISODate;
-  status: TimesheetStatus;
-  submittedAt?: ISODate;
-  validatedById?: string;
-  validatedAt?: ISODate;
-  comment?: string;
-  corrections: { ts: ISODate; actorId: string; reason: string }[];
-}
-export interface TimesheetEntry {
-  id: string;
-  timesheetId: string;
-  /** Project id, or an internal code ("INT-FORM", "INT-ADM", "INT-BD") */
-  projectId: string;
   date: ISODate;
-  hours: number;
-  billable: boolean;
-  activityType: ActivityType;
-  description: string;
-}
-
-/* ---------- Evaluations (LIGHT, spec 8.13 — no weights, no global score) ---------- */
-export const EVAL_CRITERIA = ["quality", "deadlines", "technical", "autonomy", "communication", "teamwork", "clientRelation", "responsibility"] as const;
-export type EvalCriterion = (typeof EVAL_CRITERIA)[number];
-export interface Evaluation {
-  id: string;
-  employeeId: string;
-  projectId: string;
-  evaluatorId: string;
-  criteria: Partial<Record<EvalCriterion, 1 | 2 | 3 | 4 | 5>>;
-  strengths: string;
-  improvements: string;
-  trainingRecommendation: string;
-  confidential: boolean;
-  createdAt: ISODate;
-}
-
-/* ---------- Marketplace ---------- */
-export interface Opportunity {
-  id: string;
-  projectId?: string;
-  title: string;
-  publisherId: string;
-  departmentId: string;
-  description: string;
-  skillIds: string[];
-  startDate: ISODate;
-  endDate: ISODate;
-  allocationPct: number;
-  deadline: ISODate;
-  status: "OUVERTE" | "CLOTUREE";
-  createdAt: ISODate;
-}
-export interface Application {
-  id: string;
-  opportunityId: string;
-  employeeId: string;
-  motivation: string;
-  status: "ENVOYEE" | "PRESELECTIONNEE" | "NON_RETENUE" | "RETIREE";
-  createdAt: ISODate;
+  mode: WorkMode;
+  /** Who recorded it (user id) — shown in the audit trail. */
+  setById?: string;
 }
 
 /* ---------- Notifications, documents, audit ---------- */
@@ -319,9 +266,6 @@ export type NotificationKind =
   | "REQUEST"
   | "ASSIGNMENT"
   | "MISSION"
-  | "MARKETPLACE"
-  | "LEAVE"
-  | "TIMESHEET"
   | "CONFLICT"
   | "OVERLOAD"
   | "CERTIFICATION"
@@ -398,8 +342,6 @@ export interface Settings {
   thresholds: { underUse: number; overload: number };
   forecastWeights: Record<Certainty, number>;
   softBookingExpiryDays: number;
-  maxDailyHours: number;
-  maxWeeklyHours: number;
   /** Approved/pending leave of at least this many working days inside an assignment is reported as a plan conflict. */
   longAbsenceDays: number;
   standardWeeklyHours: number;
@@ -453,12 +395,9 @@ export interface AppState {
   requirements: StaffingRequirement[];
   requests: StaffingRequest[];
   assignments: Assignment[];
+  /** Absences (approved leave, training, travel) — read-only data that feeds planning, capacity and matching. */
   leaves: LeaveRequest[];
-  timesheets: Timesheet[];
-  entries: TimesheetEntry[];
-  evaluations: Evaluation[];
-  opportunities: Opportunity[];
-  applications: Application[];
+  workModes: WorkModeEntry[];
   pipeline: PipelineItem[];
 
   notifications: Notification[];

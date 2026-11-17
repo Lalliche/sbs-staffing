@@ -16,6 +16,7 @@ import { Combobox, DateInput, NumberInput, Stepper } from "@/components/ui/Contr
 import { DataTable, SavedViews, type Column } from "@/components/ui/DataTable";
 import { FilterBar } from "@/components/ui/FilterBar";
 import { SearchInput, SelectInput, TextArea, TextInput } from "@/components/ui/FormInputs";
+import { PRESENCE_META, PresenceBadge } from "@/components/presence/PresenceBadge";
 import { Callout, EmptyState, PageHeader, Skeleton } from "@/components/ui/Surface";
 import { Drawer, Modal } from "@/components/ui/Overlay";
 import { useToast } from "@/components/ui/Toast";
@@ -39,7 +40,8 @@ export function PeoplePage() {
   const [reason, setReason] = useState("");
   const all = useMemo(() => peopleRows(s), [s]);
   const f: PeopleFilters = { q: q.get("q"), dept: q.get("dept"), grade: q.get("grade"), office: q.get("bureau"), status: q.get("status"), skill: q.get("skill"), view: ((q.get("view") as PeopleView) || "tous") };
-  const rows = filterPeople(all, f);
+  const presenceF = q.get("presence");
+  const rows = filterPeople(all, f).filter((r) => !presenceF || r.presence === presenceF);
   const counts = viewCounts(all, f);
   const opts = peopleFilterOptions(s);
   const cost = showsCost(all);
@@ -52,6 +54,7 @@ export function PeoplePage() {
     { key: "mgr", header: "Manager", cell: (r) => r.managerName, defaultHidden: true, csv: (r) => r.managerName },
     { key: "skills", header: "Compétences principales", cell: (r) => <span className="flex flex-wrap gap-1">{r.topSkills.map((k) => <Badge key={k.name}>{k.name}</Badge>)}</span>, hideBelow: "lg", csv: (r) => r.topSkills.map((k) => k.name).join(" ; ") },
     { key: "util", header: "Utilisation (mois)", align: "end", cell: (r) => (r.utilization === null ? "—" : <span className={r.utilizationStatus === "OVER" ? "font-semibold text-conflict" : r.utilizationStatus === "UNDER" ? "text-alert" : ""}>{fmtPct(r.utilization)}</span>), sort: (a, b) => (a.utilization ?? -1) - (b.utilization ?? -1), csv: (r) => (r.utilization === null ? "" : Math.round(r.utilization)) },
+    { key: "presence", header: "Aujourd’hui", cell: (r) => (r.presence ? <PresenceBadge presence={r.presence} short /> : "—"), csv: (r) => (r.presence ? PRESENCE_META[r.presence].label : ""), hideBelow: "md" },
     { key: "avail", header: "Disponibilité (4 sem.)", cell: (r) => <StatusPill tone={AVAIL_TONE[r.availability.status]} label={AVAIL_LABEL[r.availability.status]} />, csv: (r) => AVAIL_LABEL[r.availability.status] },
     ...(cost ? [{ key: "cost", header: "Coût journalier (DZD)", align: "end" as const, defaultHidden: true, cell: (r: PeopleRow) => (typeof r.emp.dailyCost === "number" ? fmtDZD(r.emp.dailyCost) : "—"), csv: (r: PeopleRow) => r.emp.dailyCost }] : []),
     { key: "status", header: "Statut", cell: (r) => <StatusPill tone={r.emp.status === "ACTIF" ? "ok" : r.emp.status === "ARCHIVE" ? "neutral" : "alert"} label={STATUS_LABEL[r.emp.status]} />, csv: (r) => STATUS_LABEL[r.emp.status] },
@@ -71,8 +74,8 @@ export function PeoplePage() {
       {loading ? <Skeleton className="h-72 w-full" /> : (
         <DataTable rows={rows} columns={cols} getId={(r) => r.id} caption="Collaborateurs" exportName="collaborateurs" selectable={can("employee.archive")} onRowClick={(r) => router.push(`/app/collaborateurs/${r.id}`)} pageSize={25}
           bulk={(sel, clear) => <><Button size="sm" variant="inverse" icon={<Archive className="size-4" />} onClick={() => { setArchiving(sel.filter((x) => x.emp.status !== "ARCHIVE")); clear(); }}>Archiver</Button></>}
-          toolbar={<><SearchInput className="w-[18em]" value={f.q ?? ""} onChange={(v) => q.set("q", v || null)} placeholder="Nom, matricule, poste, compétence…" /><FilterBar values={{ dept: f.dept ?? "", grade: f.grade ?? "", bureau: f.office ?? "", status: f.status ?? "", skill: f.skill ?? "" }} onChange={(k, v) => q.set(k, v)} onClear={() => q.setMany({ dept: null, grade: null, bureau: null, status: null, skill: null })} defs={[{ key: "dept", label: "Département", options: opts.dept }, { key: "grade", label: "Grade", options: opts.grade }, { key: "bureau", label: "Bureau", options: opts.office }, { key: "status", label: "Statut", options: opts.status }, { key: "skill", label: "Compétence", options: opts.skill }]} /></>}
-          empty={<EmptyState icon={Users} title="Aucun collaborateur" description="Aucun résultat pour ces critères." action={<Button variant="secondary" onClick={() => q.setMany({ q: null, dept: null, grade: null, bureau: null, status: null, skill: null, view: null })}>Effacer les filtres</Button>} />}
+          toolbar={<><SearchInput className="w-[18em]" value={f.q ?? ""} onChange={(v) => q.set("q", v || null)} placeholder="Nom, matricule, poste, compétence…" /><FilterBar values={{ presence: presenceF ?? "", dept: f.dept ?? "", grade: f.grade ?? "", bureau: f.office ?? "", status: f.status ?? "", skill: f.skill ?? "" }} onChange={(k, v) => q.set(k, v)} onClear={() => q.setMany({ dept: null, grade: null, bureau: null, status: null, skill: null, presence: null })} defs={[{ key: "presence", label: "Présence aujourd’hui", options: [{ value: "ONSITE", label: "Présentiel" }, { value: "REMOTE", label: "À distance" }, { value: "ABSENT", label: "Absent(e)" }] }, { key: "dept", label: "Département", options: opts.dept }, { key: "grade", label: "Grade", options: opts.grade }, { key: "bureau", label: "Bureau", options: opts.office }, { key: "status", label: "Statut", options: opts.status }, { key: "skill", label: "Compétence", options: opts.skill }]} /></>}
+          empty={<EmptyState icon={Users} title="Aucun collaborateur" description="Aucun résultat pour ces critères." action={<Button variant="secondary" onClick={() => q.setMany({ q: null, dept: null, grade: null, bureau: null, status: null, skill: null, presence: null, view: null })}>Effacer les filtres</Button>} />}
           rowActions={(r) => (r.emp.status === "ARCHIVE" ? can("employee.archive") && <Button size="sm" variant="ghost" icon={<RotateCcw className="size-4" />} onClick={() => { const x = act((d) => restoreEmployee(d, r.id)); toast({ title: x.ok ? `${r.fullName} restauré(e)` : "Refusé", body: x.ok ? undefined : x.error }); }}>Restaurer</Button> : can("employee.archive") && <Button size="sm" variant="ghost" aria-label={`Archiver ${r.fullName}`} onClick={() => setArchiving([r])}><Archive className="size-4" /></Button>)} />
       )}
       {form && <EmployeeForm id={form.id} onClose={() => setForm(null)} onSaved={(id) => { setForm(null); router.push(`/app/collaborateurs/${id}`); }} />}

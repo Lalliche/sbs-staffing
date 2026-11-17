@@ -13,8 +13,8 @@ interface Step {
 }
 const COMMON: Step[] = [
   { target: "persona", title: "Changer de profil", body: "Passez d’un profil à l’autre en un clic : navigation, boutons et données changent immédiatement selon les droits." },
-  { target: "search", title: "Recherche globale", body: "⌘K ouvre la palette : personnes, missions, demandes, compétences, pages et actions rapides." },
-  { target: "bell", title: "Notifications", body: "Chaque notification mène à l’objet exact : demande, conflit, congé, timesheet." },
+  { target: "search", title: "Recherche globale", body: "⌘K ouvre la palette : personnes, missions, demandes, pages et actions rapides." },
+  { target: "bell", title: "Notifications", body: "Chaque notification mène à l’objet exact : demande, conflit, affectation." },
 ];
 const STAFFING: Step[] = [
   { target: "nav-accueil", title: "Votre poste de pilotage", body: "File des demandes, conflits de planning et missions sans équipe, calculés en direct." },
@@ -33,7 +33,7 @@ const STEPS: Record<Role, Step[]> = {
   ],
   ADMIN: [{ target: "nav-admin", title: "Administration", body: "Utilisateurs, référentiels, règles de staffing et journal d’audit." }, { target: "nav-accueil", title: "Tableau de bord", body: "Indicateurs consolidés de la plateforme." }, ...COMMON],
   DIRECTION: [
-    { target: "nav-accueil", title: "Tableau de bord exécutif", body: "Utilisation planifiée et réelle séparées, facturabilité, missions à staffer, demandes urgentes — filtrables." },
+    { target: "nav-accueil", title: "Tableau de bord exécutif", body: "Utilisation planifiée, présence du jour (sur site / à distance), missions à staffer, demandes urgentes — filtrables." },
     { target: "nav-capacite", title: "Capacité sur 6 mois", body: "Le déficit par grade et par compétence, et le scénario « et si » : ajoutez une mission probable et voyez l’impact." },
     { target: "nav-analytics", title: "Analytics et rapports", body: "Rapports filtrables, exportables en CSV/Excel et en PDF imprimable." },
     { target: "assistant", title: "Poser une question", body: "« Combien de Seniors seront disponibles en janvier ? » — réponse issue des données, avec sa source." },
@@ -47,24 +47,19 @@ const STEPS: Record<Role, Step[]> = {
   ],
   RESOURCE_MANAGER: STAFFING.concat(COMMON.slice(0, 2)),
   MANAGER: [
-    { target: "nav-accueil", title: "Votre équipe", body: "Charge de l’équipe, timesheets à valider, congés à approuver." },
+    { target: "nav-accueil", title: "Votre équipe", body: "Charge de l’équipe et présence du jour : qui est sur site, qui est à distance." },
     { target: "nav-missions", title: "Vos missions", body: "Créez une mission avec ses besoins (1 Manager, 2 Seniors, 3 Juniors) puis une demande de staffing." },
     { target: "nav-demandes", title: "Demandes de staffing", body: "Suivez l’avancement de vos demandes dans la file du Resource Manager." },
-    { target: "nav-timesheets", title: "Validation des timesheets", body: "Valider, rejeter ou demander une correction, avec les anomalies détectées." },
-    { target: "nav-conges", title: "Congés", body: "Approuver une demande recalcule immédiatement les disponibilités." },
     ...COMMON,
   ],
   RH: [
-    { target: "nav-collab", title: "Collaborateurs", body: "Fiches, import guidé avec contrôle des erreurs, archivage sans suppression." },
-    { target: "nav-conges", title: "Congés et absences", body: "Calendrier global, demandes à approuver, jours fériés." },
-    { target: "nav-accueil", title: "Tableau de bord RH", body: "Certifications bientôt expirées, congés en attente, archives." },
+    { target: "nav-collab", title: "Collaborateurs", body: "Fiches, import guidé avec contrôle des erreurs, archivage sans suppression, présence jour par jour." },
+    { target: "nav-accueil", title: "Tableau de bord RH", body: "Présence du jour, certifications bientôt expirées, archives." },
     ...COMMON,
   ],
   COLLABORATEUR: [
-    { target: "nav-accueil", title: "Ma semaine", body: "Mes affectations, mon statut de timesheet et mes demandes de congé." },
-    { target: "nav-timesheets", title: "Mes timesheets", body: "Saisissez vos heures par mission, enregistrez en brouillon puis soumettez." },
-    { target: "nav-marketplace", title: "Marketplace", body: "Opportunités ouvertes : postulez. Une candidature ne crée jamais d’affectation." },
-    { target: "nav-conges", title: "Mes congés", body: "Posez une demande ; votre manager est notifié." },
+    { target: "nav-accueil", title: "Ma semaine", body: "Mes affectations et ma présence : cliquez sur un jour pour passer de présentiel à à distance." },
+    { target: "nav-planning", title: "Planning", body: "Les affectations de l’équipe ; les jours à distance apparaissent en pointillé." },
     ...COMMON,
   ],
 };

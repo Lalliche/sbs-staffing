@@ -1,7 +1,7 @@
 import { DEFAULT_ROLE_PERMISSIONS } from "../engine/permissions";
 import type { AppState, Settings } from "./types";
 
-export const STATE_VERSION = 3;
+export const STATE_VERSION = 4;
 
 export const defaultSettings = (): Settings => ({
   scoringWeights: { skills: 30, availability: 25, sector: 15, grade: 15, certifications: 10, history: 5 },
@@ -11,8 +11,6 @@ export const defaultSettings = (): Settings => ({
   thresholds: { underUse: 60, overload: 100 },
   forecastWeights: { CONFIRMEE: 100, PROBABLE: 60, OPPORTUNITE: 25 },
   softBookingExpiryDays: 7,
-  maxDailyHours: 10,
-  maxWeeklyHours: 48,
   longAbsenceDays: 15,
   standardWeeklyHours: 40,
   includeSoftInUtilization: false,
@@ -48,11 +46,7 @@ export function blankState(): AppState {
     requests: [],
     assignments: [],
     leaves: [],
-    timesheets: [],
-    entries: [],
-    evaluations: [],
-    opportunities: [],
-    applications: [],
+    workModes: [],
     pipeline: [],
     notifications: [],
     emailLog: [],

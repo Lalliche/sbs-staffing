@@ -127,10 +127,10 @@ export function DemoBar({ collapsed, onToggle }: { collapsed: boolean; onToggle:
               <Opt key={o.label} onClick={() => {
                 const sum = travel(o.v);
                 close();
-                toast({ title: "Le temps avance", body: `${o.label}${sum.expiredSoft ? ` · ${sum.expiredSoft} réservation(s) expirée(s)` : ""}${sum.remindersSent ? ` · ${sum.remindersSent} rappel(s) timesheet` : ""}${sum.certificationsExpiring ? ` · ${sum.certificationsExpiring} certification(s) bientôt expirée(s)` : ""}`, tone: "info" });
+                toast({ title: "Le temps avance", body: `${o.label}${sum.expiredSoft ? ` · ${sum.expiredSoft} réservation(s) expirée(s)` : ""}${sum.certificationsExpiring ? ` · ${sum.certificationsExpiring} certification(s) bientôt expirée(s)` : ""}`, tone: "info" });
               }}>{o.label}</Opt>
             ))}
-            <p className="border-t border-border px-3 py-2 text-xs text-text-muted">Rappels de timesheets, certifications bientôt expirées, réservations qui expirent, début et fin de missions se déclenchent.</p>
+            <p className="border-t border-border px-3 py-2 text-xs text-text-muted">Certifications bientôt expirées, réservations qui expirent, début et fin de missions se déclenchent.</p>
           </div>
         )}
       </Popover>
@@ -143,7 +143,7 @@ export function DemoBar({ collapsed, onToggle }: { collapsed: boolean; onToggle:
       {me && <span className="hidden text-xs text-white/45 xl:inline">{ROLE_LABEL[me.role]}</span>}
       <Btn onClick={onToggle} aria-label="Réduire la barre de démonstration (Ctrl+Maj+D)" title="Ctrl+Maj+D"><PanelTopClose className="size-3.5" /></Btn>
       <Modal open={confirm} onClose={() => setConfirm(false)} title="Réinitialiser la démonstration ?" subtitle={`Le scénario « ${SCENARIO_LABEL[s.scenario]} » sera rechargé.`} footer={<><Button variant="ghost" onClick={() => setConfirm(false)}>Annuler</Button><Button variant="danger" onClick={() => { resetDemo(); setConfirm(false); router.push("/app/accueil"); toast({ title: "Démonstration réinitialisée" }); }}>Réinitialiser</Button></>}>
-        Les affectations, demandes, congés, timesheets et réglages créés pendant la démonstration seront effacés.
+        Les affectations, demandes, présences et réglages créés pendant la démonstration seront effacés.
       </Modal>
     </div>
   );

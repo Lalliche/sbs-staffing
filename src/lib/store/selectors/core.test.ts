@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { buildSeed } from "../seed";
-import { employeeById, matchView, projectById, visibleEmployees, visibleEvaluations, visibleProjects, visibleRequests } from "./core";
+import { employeeById, isSelfView, matchView, projectById, visibleEmployees, visibleProjects, visibleRequests } from "./core";
 import { scoreCandidate, requirementLike } from "../../engine/matching";
+import { canEditPresence, presenceIds, presenceOfEmployeeOn, presenceSummary } from "./presence";
 import type { AppState } from "../types";
 
 const as = (id: string): AppState => {
@@ -43,17 +44,33 @@ describe("selectors strip sensitive data by RBAC (spec 3.3)", () => {
     expect(matchView(s, m).estimatedCost).toBeUndefined(); // Resource Manager has no cost permission by default
     expect(matchView(as("u-yacine"), m).estimatedCost).toBeGreaterThan(0);
   });
-  it("confidential evaluations: RH/Partner/evaluator only; collaborateur sees own non-confidential ones", () => {
-    const rh = visibleEvaluations(as("u-sophie"));
-    expect(rh.some((e) => e.confidential)).toBe(true);
-    const claire = visibleEvaluations(as("u-claire"));
-    expect(claire.every((e) => e.employeeId === "e04" && !e.confidential)).toBe(true);
-    expect(claire.length).toBeGreaterThan(0);
-    const lucas = visibleEvaluations(as("u-lucas"));
-    expect(lucas.every((e) => e.employeeId === "e11" && !e.confidential)).toBe(true);
-    const yanis = as("u-thomas"); // Thomas is the evaluator of e08's confidential evaluation (ev-3)
-    expect(visibleEvaluations(yanis).some((e) => e.id === "ev-3")).toBe(true);
-    expect(visibleEvaluations(as("u-nabil")).some((e) => e.id === "ev-3")).toBe(false);
+  it("presence: counts follow the viewer's scope; a collaborateur sees only themselves; no permission → nothing", () => {
+    const all = as("u-amine");
+    const sum = presenceSummary(all, all.employees);
+    expect(sum.allowed).toBe(true);
+    expect(sum.onsite + sum.remote + sum.absent + sum.off).toBe(sum.total);
+    expect(sum.total).toBe(all.employees.filter((e) => e.status !== "ARCHIVE").length);
+    const claire = as("u-claire");
+    expect(presenceSummary(claire, claire.employees).total).toBe(1);
+    expect(presenceOfEmployeeOn(claire, claire.employees.find((e) => e.id === "e16")!, claire.now)).toBeNull();
+    expect(presenceOfEmployeeOn(claire, claire.employees.find((e) => e.id === "e04")!, claire.now)).toBe("REMOTE");
+    const thomas = as("u-thomas");
+    expect(presenceSummary(thomas, thomas.employees).total).toBeLessThan(sum.total); // department scope
+    all.rolePermissions.RESOURCE_MANAGER = all.rolePermissions.RESOURCE_MANAGER.filter((p) => p !== "workmode.view");
+    expect(presenceSummary(all, all.employees)).toMatchObject({ allowed: false, total: 0 });
+    expect(Object.values(presenceIds(all, all.employees)).flat()).toHaveLength(0);
+  });
+  it("self view: only a Collaborateur (who sees nobody but themselves) gets « Mon profil » instead of the directory", () => {
+    expect(isSelfView(as("u-claire"))).toBe(true);
+    expect(isSelfView(as("u-lucas"))).toBe(true);
+    for (const id of ["u-amine", "u-thomas", "u-sophie", "u-yacine", "u-samira", "u-karim"]) expect(isSelfView(as(id))).toBe(false);
+    expect(isSelfView(buildSeed(2))).toBe(false); // nobody signed in
+  });
+  it("presence editing: the person themselves and the resource manager, not the direction", () => {
+    expect(canEditPresence(as("u-claire"), "e04")).toBe(true);
+    expect(canEditPresence(as("u-claire"), "e16")).toBe(false);
+    expect(canEditPresence(as("u-amine"), "e16")).toBe(true);
+    expect(canEditPresence(as("u-yacine"), "e16")).toBe(false);
   });
   it("requests: managers see their own, resource managers see the whole queue", () => {
     expect(visibleRequests(as("u-amine")).length).toBe(8);

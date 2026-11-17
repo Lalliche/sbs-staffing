@@ -1,5 +1,5 @@
 /* UI-facing labels, tones and colours for domain enums (French). Single source — no copy elsewhere. */
-import type { AssignmentStatus, Certainty, LeaveStatus, LeaveType, Priority, ProjectStatus, RequestStatus, Role, TimesheetStatus } from "./store/types";
+import type { AssignmentStatus, Certainty, Priority, ProjectStatus, RequestStatus, Role, WorkMode } from "./store/types";
 import type { Tone } from "@/components/ui/Badge";
 
 export const DEPT_COLOR: Record<string, string> = {
@@ -37,18 +37,9 @@ export const REQUEST_STATUS: Record<RequestStatus, L> = {
   ANNULEE: { label: "Annulée", tone: "neutral" },
   SATISFAITE: { label: "Satisfaite", tone: "ok" },
 };
-export const LEAVE_STATUS: Record<LeaveStatus, L> = {
-  BROUILLON: { label: "Brouillon", tone: "neutral" },
-  SOUMISE: { label: "En attente", tone: "alert" },
-  APPROUVEE: { label: "Approuvée", tone: "ok" },
-  REFUSEE: { label: "Refusée", tone: "conflict" },
-};
-export const TIMESHEET_STATUS: Record<TimesheetStatus, L> = {
-  BROUILLON: { label: "Brouillon", tone: "neutral" },
-  SOUMIS: { label: "Soumis", tone: "info" },
-  VALIDE: { label: "Validé", tone: "ok" },
-  REJETE: { label: "Rejeté", tone: "conflict" },
-  CORRECTION_DEMANDEE: { label: "Correction demandée", tone: "alert" },
+export const WORK_MODE: Record<WorkMode, { label: string; short: string }> = {
+  ONSITE: { label: "Présentiel", short: "Sur site" },
+  REMOTE: { label: "À distance", short: "À distance" },
 };
 export const PRIORITY: Record<Priority, L> = {
   BASSE: { label: "Basse", tone: "neutral" },
@@ -60,15 +51,6 @@ export const CERTAINTY: Record<Certainty, L> = {
   CONFIRMEE: { label: "Confirmée", tone: "ok" },
   PROBABLE: { label: "Probable", tone: "info" },
   OPPORTUNITE: { label: "Opportunité", tone: "neutral" },
-};
-export const LEAVE_TYPE: Record<LeaveType, string> = {
-  CONGE_ANNUEL: "Congé annuel",
-  MALADIE: "Maladie",
-  FORMATION: "Formation",
-  DEPLACEMENT: "Déplacement",
-  MISSION_INTERNE: "Mission interne",
-  EXCEPTIONNEL: "Congé exceptionnel",
-  TEMPS_PARTIEL: "Temps partiel",
 };
 export const SKILL_LEVEL_LABEL = ["", "Débutant", "Intermédiaire", "Avancé", "Expert"];
 export type { Role };

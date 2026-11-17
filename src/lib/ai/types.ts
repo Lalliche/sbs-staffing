@@ -9,6 +9,7 @@ export type IntentId =
   | "unstaffed"
   | "skills_gap"
   | "utilization"
+  | "presence"
   | "risks"
   | "cost"
   | "person"

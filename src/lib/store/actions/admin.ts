@@ -33,7 +33,6 @@ export function validateSettings(st: Settings): string | null {
   if (w.reduce((a, b) => a + b, 0) <= 0) return "La somme des pondérations doit être positive.";
   if (!(st.thresholds.underUse >= 0 && st.thresholds.underUse < st.thresholds.overload)) return "Le seuil de sous-occupation doit être inférieur au seuil de surcharge.";
   if (st.softBookingExpiryDays < 1 || st.softBookingExpiryDays > 60) return "L’expiration des réservations est comprise entre 1 et 60 jours.";
-  if (st.maxDailyHours < 4 || st.maxDailyHours > 16 || st.maxWeeklyHours < 20 || st.maxWeeklyHours > 80) return "Maximums d’heures hors plage.";
   if (Object.values(st.forecastWeights).some((x) => x < 0 || x > 100)) return "Les pondérations de certitude sont comprises entre 0 et 100.";
   return null;
 }
@@ -44,7 +43,7 @@ export function saveSettings(s: AppState, next: Settings): Result {
   if (err) return fail("INVALID", err);
   const before = JSON.parse(JSON.stringify(s.settings)) as Settings;
   s.settings = JSON.parse(JSON.stringify(next)) as Settings;
-  const flat = (o: Settings) => ({ ...o.scoringWeights, ...Object.fromEntries(Object.entries(o.blocking).map(([k, v]) => [`bloquant_${k}`, v])), minAvailabilityRatio: o.minAvailabilityRatio, sousOccupation: o.thresholds.underUse, surcharge: o.thresholds.overload, ...Object.fromEntries(Object.entries(o.forecastWeights).map(([k, v]) => [`certitude_${k}`, v])), softExpiryDays: o.softBookingExpiryDays, maxDaily: o.maxDailyHours, maxWeekly: o.maxWeeklyHours, longAbsence: o.longAbsenceDays, includeSoft: o.includeSoftInUtilization });
+  const flat = (o: Settings) => ({ ...o.scoringWeights, ...Object.fromEntries(Object.entries(o.blocking).map(([k, v]) => [`bloquant_${k}`, v])), minAvailabilityRatio: o.minAvailabilityRatio, sousOccupation: o.thresholds.underUse, surcharge: o.thresholds.overload, ...Object.fromEntries(Object.entries(o.forecastWeights).map(([k, v]) => [`certitude_${k}`, v])), softExpiryDays: o.softBookingExpiryDays, longAbsence: o.longAbsenceDays, includeSoft: o.includeSoftInUtilization });
   audit(s, { action: "settings.update", entity: "Règles", entityId: "settings", label: "Règles de staffing modifiées", before: flat(before), after: flat(s.settings) });
   return ok(undefined);
 }

@@ -1,9 +1,9 @@
-/* Core read layer. UI code reads people/missions/evaluations ONLY through these selectors:
-   sensitive fields (costs, rates, budgets, confidential evaluations) are absent for roles without the permission,
+/* Core read layer. UI code reads people/missions ONLY through these selectors:
+   sensitive fields (costs, rates, budgets) are absent for roles without the permission,
    and lists are limited to the viewer's scope (spec 3.3). Engine functions read raw state internally. */
 import { can, type Resource } from "../../engine/permissions";
 import type { MatchResult } from "../../engine/matching";
-import type { AppState, Assignment, Employee, Evaluation, LeaveRequest, Project, StaffingRequest, User } from "../types";
+import type { AppState, Assignment, Employee, LeaveRequest, Project, StaffingRequest, User } from "../types";
 
 export const sessionUser = (s: AppState): User | undefined => s.users.find((u) => u.id === s.session.userId && u.status === "ACTIF");
 export const myEmployee = (s: AppState): Employee | undefined => {
@@ -25,6 +25,13 @@ export function employeeView(s: AppState, e: Employee): EmployeeView {
 export function visibleEmployees(s: AppState, opts: { includeArchived?: boolean } = {}): EmployeeView[] {
   if (!canDo(s, "employee.view")) return [];
   return s.employees.filter((e) => (opts.includeArchived || e.status !== "ARCHIVE") && canDo(s, "employee.view", { employeeId: e.id })).map((e) => employeeView(s, e));
+}
+/** True when the viewer can only ever see their own employee record (a Collaborateur): the people list then makes no sense
+ *  and the « Collaborateurs » section is shown as « Mon profil ». */
+export function isSelfView(s: AppState): boolean {
+  const u = sessionUser(s);
+  if (!u?.employeeId) return false;
+  return visibleEmployees(s, { includeArchived: true }).every((e) => e.id === u.employeeId);
 }
 export function employeeById(s: AppState, id: string): EmployeeView | undefined {
   const e = s.employees.find((x) => x.id === id);
@@ -64,29 +71,13 @@ export function visibleAssignments(s: AppState): Assignment[] {
   return s.assignments.filter((a) => canDo(s, "planning.view", { employeeId: a.employeeId }) || canDo(s, "planning.view", { projectId: a.projectId }));
 }
 export function visibleLeaves(s: AppState): LeaveRequest[] {
-  if (!canDo(s, "availability.view") && !canDo(s, "leave.request")) return [];
-  return s.leaves.filter((l) => canDo(s, "availability.view", { employeeId: l.employeeId }) || canDo(s, "leave.request", { employeeId: l.employeeId }));
+  if (!canDo(s, "availability.view")) return [];
+  return s.leaves.filter((l) => canDo(s, "availability.view", { employeeId: l.employeeId }));
 }
 export function visibleRequests(s: AppState): StaffingRequest[] {
   if (!canDo(s, "request.view")) return [];
   const me = sessionUser(s);
   return s.requests.filter((r) => canDo(s, "request.process") || r.requesterId === me?.employeeId || canDo(s, "request.view", { projectId: r.projectId }));
-}
-
-/* ---------- evaluations (light) ---------- */
-export function visibleEvaluations(s: AppState, employeeId?: string): Evaluation[] {
-  const u = sessionUser(s);
-  if (!u) return [];
-  const readConfidential = canDo(s, "evaluation.confidential.read");
-  const myId = u.employeeId;
-  return s.evaluations.filter((ev) => {
-    if (employeeId && ev.employeeId !== employeeId) return false;
-    if (!canDo(s, "evaluation.view")) return false;
-    // A collaborateur sees only their own non-confidential evaluations
-    if (u.role === "COLLABORATEUR") return ev.employeeId === myId && !ev.confidential;
-    if (ev.confidential) return readConfidential || ev.evaluatorId === u.id;
-    return canDo(s, "evaluation.view", { employeeId: ev.employeeId }) || ev.evaluatorId === u.id;
-  });
 }
 
 /* ---------- matching output ---------- */

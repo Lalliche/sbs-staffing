@@ -5,6 +5,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { enterAs } from "@/lib/store/store";
 import { ROLE_LABEL } from "@/lib/engine/permissions";
 import { useSession } from "@/lib/store/hooks";
+import { isSelfView } from "@/lib/store/selectors/core";
 import { Avatar } from "@/components/ui/Avatar";
 import { Button, IconButton } from "@/components/ui/Button";
 import { MenuItem, Popover } from "@/components/ui/Popover";
@@ -18,10 +19,11 @@ export function TopBar({ onMenu }: { onMenu: () => void }) {
   const router = useRouter();
   const shell = useShell();
   if (!me) return null;
-  const segs = path.split("/").filter(Boolean).slice(1);
+  const selfView = isSelfView(s);
+  const segs = path.split("/").filter(Boolean).slice(1).filter((sg) => !(selfView && sg === emp?.id)); // « Mon profil » is one crumb, not two
   const crumbs = segs.map((sg, i) => {
     const href = "/" + ["app", ...segs.slice(0, i + 1)].join("/");
-    let label = CRUMBS[sg];
+    let label = selfView && sg === "collaborateurs" ? "Mon profil" : CRUMBS[sg];
     if (!label) label = s.projects.find((m) => m.id === sg)?.name ?? (s.employees.find((e) => e.id === sg) ? `${s.employees.find((e) => e.id === sg)!.firstName} ${s.employees.find((e) => e.id === sg)!.lastName}` : s.requests.find((r) => r.id === sg)?.reference ?? sg);
     return { label, href: i < segs.length - 1 ? href : undefined };
   });

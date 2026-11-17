@@ -3,9 +3,10 @@
 import { averageLoadPct, availableHours, dayLoads, peakLoadPct, theoreticalHours, workingDays, type DayLoad } from "../../engine/capacity";
 import { addDays, diffDays, monthEnd, monthStart, weekStart } from "../../engine/dates";
 import { statusOf, utilizationOf, type UtilizationStatus } from "../../engine/utilization";
-import { entriesOf, billableHours, totalHours } from "../../engine/timesheet";
-import type { AppState, Assignment, DocumentMeta, Employee, EmployeeStatus, ISODate, SkillLevel, TimesheetStatus } from "../types";
-import { canDo, employeeById, sessionUser, visibleAssignments, visibleEmployees, type EmployeeView } from "./core";
+import type { AppState, Assignment, DocumentMeta, Employee, EmployeeStatus, ISODate, SkillLevel } from "../types";
+import { presenceOfEmployeeOn } from "./presence";
+import type { Presence } from "../../engine/workmode";
+import { employeeById, visibleAssignments, visibleEmployees, type EmployeeView } from "./core";
 
 /* ------------------------------------------------------------------ availability */
 export type Availability = "LIBRE" | "PARTIELLE" | "PLEINE" | "SURCHARGEE" | "INDISPONIBLE";
@@ -80,6 +81,8 @@ export interface PeopleRow {
   utilization: number | null;
   utilizationStatus: UtilizationStatus | null;
   availability: AvailabilityInfo;
+  /** Présentiel / à distance on the demo « today » (null when the viewer may not see presence). */
+  presence: Presence | null;
 }
 
 export function topSkillsOf(s: AppState, employeeId: string, n = 3): TopSkill[] {
@@ -116,6 +119,7 @@ export function peopleRows(s: AppState): PeopleRow[] {
       utilization: planned,
       utilizationStatus: planned === null ? null : statusOf(s, r, planned),
       availability: availabilityOf(s, emp.id, from, to),
+      presence: presenceOfEmployeeOn(s, r, s.now),
     };
   });
 }
@@ -283,34 +287,6 @@ export function employeeLoadStrip(s: AppState, employeeId: string, from: ISODate
   });
 }
 
-export interface TimesheetRow {
-  id: string;
-  weekStart: ISODate;
-  status: TimesheetStatus;
-  hours: number;
-  billable: number;
-  /** Real utilization (validated sheets only) and billable rate of the week. */
-  realPct: number;
-  billablePct: number;
-}
-export function employeeTimesheets(s: AppState, employeeId: string, weeks = 8): { allowed: boolean; rows: TimesheetRow[] } {
-  const u = sessionUser(s);
-  const e = raw(s, employeeId);
-  const own = !!u && u.employeeId === employeeId && canDo(s, "timesheet.own");
-  const allowed = !!e && !!employeeById(s, employeeId) && (own || canDo(s, "timesheet.view", { employeeId }));
-  if (!allowed || !e) return { allowed: false, rows: [] };
-  const rows = s.timesheets
-    .filter((t) => t.employeeId === employeeId)
-    .sort((a, b) => b.weekStart.localeCompare(a.weekStart))
-    .slice(0, weeks)
-    .map((t): TimesheetRow => {
-      const entries = entriesOf(s, t.id);
-      const u2 = utilizationOf(s, e, t.weekStart, addDays(t.weekStart, 6));
-      return { id: t.id, weekStart: t.weekStart, status: t.status, hours: totalHours(entries), billable: billableHours(entries), realPct: u2.real, billablePct: u2.billability };
-    });
-  return { allowed: true, rows };
-}
-
 export function employeeDocuments(s: AppState, employeeId: string): DocumentMeta[] {
   if (!employeeById(s, employeeId)) return [];
   return s.documents.filter((d) => d.entity === "EMPLOYEE" && d.entityId === employeeId).sort((a, b) => b.createdAt.localeCompare(a.createdAt));
@@ -318,15 +294,12 @@ export function employeeDocuments(s: AppState, employeeId: string): DocumentMeta
 
 export interface FicheSummary {
   plannedMonthPct: number;
-  /** Planned / real / billable over the 8 weeks that precede the current one (real = validated timesheets). */
+  /** Planned utilization over the 8 weeks that precede the current one. */
   windowPlannedPct: number;
-  windowRealPct: number;
-  windowBillablePct: number;
   availability: AvailabilityInfo;
   currentMissions: number;
   expiringCerts: number;
   expiredCerts: number;
-  pendingSkills: number;
   theoreticalMonthHours: number;
   freeHoursNext4Weeks: number;
 }
@@ -343,13 +316,10 @@ export function ficheSummary(s: AppState, employeeId: string): FicheSummary | un
   return {
     plannedMonthPct: m.planned,
     windowPlannedPct: win.planned,
-    windowRealPct: win.real,
-    windowBillablePct: win.billability,
     availability: availabilityOf(s, employeeId, h.from, h.to),
     currentMissions: employeeMissions(s, employeeId).current.length,
     expiringCerts: certs.filter((c) => c.state === "EXPIRING").length,
     expiredCerts: certs.filter((c) => c.state === "EXPIRED").length,
-    pendingSkills: s.employeeSkills.filter((k) => k.employeeId === employeeId && (!k.validatedById || (k.validatedAt && k.updatedAt > k.validatedAt))).length,
     theoreticalMonthHours: m.theoretical,
     freeHoursNext4Weeks: availableHours(s, e, h.from, h.to),
   };

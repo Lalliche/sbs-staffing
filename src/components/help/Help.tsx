@@ -10,14 +10,14 @@ import { Button } from "@/components/ui/Button";
 const GLOSSARY: [string, string][] = [
   ["Collaborateur", "Tout salarié de SBS."], ["Grade", "Junior · Consultant · Senior · Manager · Partner."], ["Mission", "Engagement pour un client, identifié par sa référence et son numéro OTP."], ["Besoin de staffing", "Un poste à pourvoir : grade, quantité, compétences, période, % d’allocation."],
   ["Soft booking", "Réservation provisoire (hachurée) : expire après un délai, non comptée dans la capacité confirmée."], ["Hard booking", "Affectation confirmée (pleine) : comptée dans la capacité et l’utilisation."], ["Capacité théorique", "Σ des jours ouvrés (hors week-ends, jours fériés) × heures journalières."], ["Utilisation planifiée", "Heures affectées confirmées ÷ capacité théorique."],
-  ["Utilisation réelle", "Heures de timesheets VALIDÉS ÷ capacité théorique."], ["Facturabilité", "Heures facturables validées ÷ capacité théorique."], ["Certitude", "Confirmée · Probable · Opportunité : pondère les besoins futurs (100 / 60 / 25 % par défaut)."],
+  ["Présentiel / à distance", "Mode de travail d’un collaborateur un jour donné : habitude hebdomadaire du profil, ou exception saisie pour la journée."], ["Certitude", "Confirmée · Probable · Opportunité : pondère les besoins futurs (100 / 60 / 25 % par défaut)."],
 ];
 const SCRIPTS = [
   ["A", "Resource Manager", "Tableau de bord → mission en attente → « Trouver des candidats » → réserver 2, affecter 1 → glisser un bloc dans le planning → exception justifiée → journal d’audit.", "RESOURCE_MANAGER", "/app/accueil"],
-  ["B", "Manager", "Créer une mission (1 Manager, 2 Seniors, 3 Juniors) → créer une demande de staffing → la voir dans la file du Resource Manager → approuver un congé.", "MANAGER", "/app/missions?nouveau=1"],
-  ["C", "Collaborateur", "Ma semaine → remplir et soumettre une timesheet → postuler sur la marketplace → poser un congé.", "COLLABORATEUR", "/app/timesheets"],
+  ["B", "Manager", "Créer une mission (1 Manager, 2 Seniors, 3 Juniors) → créer une demande de staffing → la voir dans la file du Resource Manager → consulter la présence de l’équipe.", "MANAGER", "/app/missions?nouveau=1"],
+  ["C", "Collaborateur", "Ma semaine → passer un jour de présentiel à à distance → consulter le planning de l’équipe → ouvrir une mission.", "COLLABORATEUR", "/app/accueil"],
   ["D", "Direction", "Tableau de bord exécutif avec filtres → capacité à 6 mois (déficit de 2 Seniors) → « et si » → poser la question à l’assistant → export PDF.", "DIRECTION", "/app/capacite?horizon=6"],
-  ["E", "RH", "Importer des collaborateurs (ligne en erreur) → archiver un départ → visibilité des évaluations confidentielles.", "RH", "/app/collaborateurs"],
+  ["E", "RH", "Importer des collaborateurs (ligne en erreur) → archiver un départ → déclarer la présence (présentiel / à distance) d’un collaborateur.", "RH", "/app/collaborateurs"],
   ["F", "Super Admin", "Modifier les permissions d’un rôle en direct → changer les pondérations du score → le classement change.", "SUPER_ADMIN", "/app/admin/roles"],
 ] as const;
 

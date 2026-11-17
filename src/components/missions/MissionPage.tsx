@@ -1,5 +1,5 @@
 "use client";
-import { FilePlus2, FileUp, Search, UserMinus, UserPlus } from "lucide-react";
+import { FilePlus2, FileUp, Search, UserMinus, UserPlus, Users } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
@@ -8,7 +8,8 @@ import { useSession } from "@/lib/store/hooks";
 import { useQueryState } from "@/lib/use-query-state";
 import { cancelAssignment, convertToHard, updateAssignment, type AssignmentPatch } from "@/lib/store/actions/assignments";
 import { addProjectDocument, setMilestoneDone, setProjectStatus } from "@/lib/store/actions/projects";
-import { missionCosts, missionHistory, missionTeam, missionTimesheets, projectDocs, requirementsOf } from "@/lib/store/selectors/missions";
+import { TeamPresence } from "@/components/presence/TeamPresence";
+import { missionCosts, missionHistory, missionTeam, projectDocs, requirementsOf } from "@/lib/store/selectors/missions";
 import { projectById, nameOf } from "@/lib/store/selectors/core";
 import { projectCoverage } from "@/lib/engine/booking";
 import { fmtDZD, fmtDate, fmtDateShort, fmtHours, fmtPct, fmtRange, relDays } from "@/lib/engine/format";
@@ -27,7 +28,7 @@ import { Bars } from "@/components/charts/Charts";
 import { ExceptionModal, type Failure } from "./ExceptionModal";
 import { CERTAINTY, PRIORITY, PROJECT_STATUS } from "@/lib/ui-domain";
 
-const TABS = [["infos", "Informations générales"], ["besoins", "Besoins de staffing"], ["equipe", "Équipe affectée"], ["planning", "Planning"], ["timesheets", "Timesheets"], ["budget", "Budget et coûts"], ["documents", "Documents"], ["historique", "Historique"]] as const;
+const TABS = [["infos", "Informations générales"], ["besoins", "Besoins de staffing"], ["equipe", "Équipe affectée"], ["planning", "Planning"], ["presence", "Présence"], ["budget", "Budget et coûts"], ["documents", "Documents"], ["historique", "Historique"]] as const;
 type Tab = (typeof TABS)[number][0];
 
 export function MissionPage({ id }: { id: string }) {
@@ -137,8 +138,7 @@ export function MissionPage({ id }: { id: string }) {
 
       {tab === "planning" && <Gantt p={p} team={team.filter((t) => t.a.status !== "ANNULEE")} now={s.now} />}
 
-      {tab === "timesheets" && (() => { const rows = missionTimesheets(s, id); return rows.length === 0 ? <EmptyState icon={FileUp} title="Aucune heure validée" description="Les heures apparaissent ici une fois les timesheets validés." /> : (
-        <Card className="!p-0 overflow-hidden"><table className="w-full text-sm"><caption className="sr-only">Heures validées par collaborateur</caption><thead className="bg-paper/60 text-xs text-text-secondary"><tr><th className="px-4 py-2 text-start font-medium">Collaborateur</th><th className="px-3 text-end font-medium">Heures validées</th><th className="px-3 text-end font-medium">dont facturables</th></tr></thead><tbody>{rows.map((r) => <tr key={r.employeeId} className="border-t border-line"><td className="px-4 py-2">{nameOf(s, r.employeeId)}</td><td className="px-3 text-end tabular-nums">{fmtHours(r.hours)}</td><td className="px-3 text-end tabular-nums">{fmtHours(r.billable)}</td></tr>)}</tbody><tfoot className="border-t-2 border-border font-semibold"><tr><td className="px-4 py-2">Total</td><td className="px-3 text-end tabular-nums">{fmtHours(rows.reduce((a, r) => a + r.hours, 0))}</td><td className="px-3 text-end tabular-nums">{fmtHours(rows.reduce((a, r) => a + r.billable, 0))}</td></tr></tfoot></table></Card>); })()}
+      {tab === "presence" && (can("workmode.view") ? (team.filter((t) => t.a.status !== "ANNULEE").length === 0 ? <EmptyState icon={Users} title="Aucune personne affectée" description="La présence de l’équipe apparaît ici dès la première affectation." /> : <TeamPresence s={s} people={team.filter((t) => t.a.status !== "ANNULEE").map((t) => t.emp)} />) : <Callout tone="neutral" title="Présence non disponible">Votre profil n’a pas accès à la présence des collaborateurs.</Callout>)}
 
       {tab === "budget" && (costs ? (
         <div className="grid gap-3 sm:grid-cols-4">{[["Budget de la mission", fmtDZD(costs.budget)], ["Budget ressources", fmtDZD(costs.resourceBudget)], ["Coût planifié (affectations)", fmtDZD(costs.plannedCost)], ["Coût engagé à ce jour", fmtDZD(costs.costToDate)]].map(([l, v]) => <Card key={l} className="!p-4"><p className="text-xs text-text-muted">{l}</p><p className="mt-1 text-xl font-semibold tabular-nums text-ink">{v}</p></Card>)}

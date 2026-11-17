@@ -5,6 +5,8 @@ import { requirementCoverage } from "../../engine/booking";
 import { addDays, addMonths, diffDays, monthStart, quarterStart, weekStart } from "../../engine/dates";
 import type { AppState, Assignment, Employee, ISODate, LeaveRequest, StaffingRequirement } from "../types";
 import { visibleAssignments, visibleLeaves } from "./core";
+import { presenceOfEmployeeOn } from "./presence";
+import type { Presence } from "../../engine/workmode";
 import { canDo } from "./core";
 
 export type Lens = "personnes" | "missions" | "departements";
@@ -79,6 +81,8 @@ export interface PlanRow {
   laneCount: number;
   leaves: LeaveRequest[];
   deptId?: string;
+  /** Présentiel / à distance today (person rows only; null when the viewer may not see presence). */
+  presenceToday?: Presence | null;
 }
 
 export function planningRows(s: AppState, lens: Lens, f: PlanFilters): PlanRow[] {
@@ -112,7 +116,7 @@ export function planningRows(s: AppState, lens: Lens, f: PlanFilters): PlanRow[]
     }
     const list = asg.filter((a) => a.employeeId === e.id && (!f.mission || a.projectId === f.mission));
     const { lanes, count } = lanesFor(list);
-    rows.push({ key: `p-${e.id}`, kind: "person", label: `${e.firstName} ${e.lastName}`, sub: s.grades.find((g) => g.id === e.gradeId)?.name, employee: e, lanes, laneCount: count, leaves: leaves.filter((l) => l.employeeId === e.id), deptId: e.departmentId });
+    rows.push({ key: `p-${e.id}`, kind: "person", label: `${e.firstName} ${e.lastName}`, sub: s.grades.find((g) => g.id === e.gradeId)?.name, employee: e, lanes, laneCount: count, leaves: leaves.filter((l) => l.employeeId === e.id), deptId: e.departmentId, presenceToday: presenceOfEmployeeOn(s, e, s.now) });
   }
   return rows;
 }

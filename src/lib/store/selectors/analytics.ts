@@ -5,6 +5,7 @@ import { addDays } from "../../engine/dates";
 import { forecastByGrade, recruitmentNeeds } from "../../engine/forecast";
 import { fmtDate } from "../../engine/format";
 import { statusOf, utilizationOf, utilizationOfGroup } from "../../engine/utilization";
+import { presenceCount, presenceDays } from "../../engine/workmode";
 import type { AppState } from "../types";
 import { canDo } from "./core";
 import { lastClosedWeekEnd, scopedEmployees } from "./dashboard";
@@ -21,10 +22,10 @@ export interface Report {
 }
 export interface ReportFilters { dept?: string; grade?: string; from?: string; to?: string }
 export const REPORT_CATALOG: { id: string; title: string; cost?: boolean }[] = [
-  { id: "utilisation-employe", title: "Utilisation par collaborateur" }, { id: "utilisation-departement", title: "Utilisation par département" }, { id: "facturabilite", title: "Facturabilité" },
+  { id: "utilisation-employe", title: "Utilisation par collaborateur" }, { id: "utilisation-departement", title: "Utilisation par département" }, { id: "presence", title: "Présence — présentiel / à distance" },
   { id: "charge-grade", title: "Charge par grade" }, { id: "disponibilites", title: "Disponibilités prévisionnelles" }, { id: "staffing-mission", title: "Staffing par mission" }, { id: "non-couvertes", title: "Missions non couvertes" },
   { id: "cout-mission", title: "Coût des ressources par mission", cost: true }, { id: "cout-grade", title: "Coût moyen par grade", cost: true }, { id: "rentabilite", title: "Rentabilité prévisionnelle", cost: true },
-  { id: "facturable-non", title: "Facturable vs non facturable" }, { id: "historique", title: "Historique des affectations" }, { id: "competences", title: "Évolution des compétences" }, { id: "recrutement", title: "Prévision de recrutement" },
+  { id: "historique", title: "Historique des affectations" }, { id: "competences", title: "Évolution des compétences" }, { id: "recrutement", title: "Prévision de recrutement" },
 ];
 export const availableReports = (s: AppState) => REPORT_CATALOG.filter((r) => !r.cost || canDo(s, "analytics.cost"));
 const r1 = (n: number) => Math.round(n * 10) / 10;
@@ -42,19 +43,20 @@ export function buildReport(s: AppState, id: string, f: ReportFilters): Report |
   switch (id) {
     case "utilisation-employe": {
       const rows = emps.map((e) => ({ e, u: utilizationOf(s, e, from, to) }));
-      return { ...base, description: "Planifiée, réelle (timesheets validés) et facturable par personne — toujours distinctes.", head: ["Collaborateur", "Grade", "Département", "Capacité (h)", "Planifiée %", "Réelle %", "Facturable %", "Statut"], rows: rows.map(({ e, u }) => [`${e.firstName} ${e.lastName}`, gname(e.gradeId), dname(e.departmentId), Math.round(u.theoretical), Math.round(u.planned), Math.round(u.real), Math.round(u.billability), { UNDER: "Sous-occupé", OK: "Normal", OVER: "Surchargé" }[statusOf(s, e, u.planned)]]), chart: { labels: rows.slice(0, 15).map(({ e }) => e.lastName), series: [{ name: "Planifiée", values: rows.slice(0, 15).map(({ u }) => Math.round(u.planned)) }, { name: "Réelle", values: rows.slice(0, 15).map(({ u }) => Math.round(u.real)) }], unit: "%" }, source: src };
+      return { ...base, description: "Heures planifiées ÷ capacité théorique, par personne.", head: ["Collaborateur", "Grade", "Département", "Capacité (h)", "Planifiée %", "Statut"], rows: rows.map(({ e, u }) => [`${e.firstName} ${e.lastName}`, gname(e.gradeId), dname(e.departmentId), Math.round(u.theoretical), Math.round(u.planned), { UNDER: "Sous-occupé", OK: "Normal", OVER: "Surchargé" }[statusOf(s, e, u.planned)]]), chart: { labels: rows.slice(0, 15).map(({ e }) => e.lastName), series: [{ name: "Planifiée", values: rows.slice(0, 15).map(({ u }) => Math.round(u.planned)) }], unit: "%" }, source: src };
     }
     case "utilisation-departement":
     case "charge-grade": {
       const byD = id === "utilisation-departement";
       const groups = byD ? s.departments.map((d) => ({ label: d.name, m: emps.filter((e) => e.departmentId === d.id) })) : s.grades.map((g) => ({ label: g.name, m: emps.filter((e) => e.gradeId === g.id) }));
       const rows = groups.filter((g) => g.m.length).map((g) => ({ g, u: utilizationOfGroup(s, g.m, from, to) }));
-      return { ...base, description: byD ? "Agrégat Σ heures ÷ Σ capacité par département." : "Charge moyenne par grade.", head: [byD ? "Département" : "Grade", "Effectif", "Capacité (h)", "Planifiée %", "Réelle %", "Facturable %"], rows: rows.map(({ g, u }) => [g.label, g.m.length, Math.round(u.theoretical), Math.round(u.planned), Math.round(u.real), Math.round(u.billability)]), chart: { labels: rows.map(({ g }) => g.label), series: [{ name: "Planifiée", values: rows.map(({ u }) => Math.round(u.planned)) }, { name: "Réelle", values: rows.map(({ u }) => Math.round(u.real)) }], unit: "%" }, source: src };
+      return { ...base, description: byD ? "Agrégat Σ heures ÷ Σ capacité par département." : "Charge moyenne par grade.", head: [byD ? "Département" : "Grade", "Effectif", "Capacité (h)", "Planifiée %"], rows: rows.map(({ g, u }) => [g.label, g.m.length, Math.round(u.theoretical), Math.round(u.planned)]), chart: { labels: rows.map(({ g }) => g.label), series: [{ name: "Planifiée", values: rows.map(({ u }) => Math.round(u.planned)) }], unit: "%" }, source: src };
     }
-    case "facturabilite":
-    case "facturable-non": {
-      const rows = s.departments.map((d) => ({ d, u: utilizationOfGroup(s, emps.filter((e) => e.departmentId === d.id), from, to) })).filter((x) => x.u.theoretical);
-      return { ...base, description: "Heures facturables validées ÷ capacité théorique ; répartition facturable / non facturable.", head: ["Département", "Heures validées", "Facturables", "Non facturables", "Facturabilité %"], rows: rows.map(({ d, u }) => [d.name, Math.round(u.worked), Math.round(u.billable), Math.round(u.worked - u.billable), Math.round(u.billability)]), chart: { labels: rows.map(({ d }) => d.name), series: [{ name: "Facturables", values: rows.map(({ u }) => Math.round(u.billable)) }, { name: "Non facturables", values: rows.map(({ u }) => Math.round(u.worked - u.billable)) }], unit: " h" }, source: src };
+    case "presence": {
+      if (!canDo(s, "workmode.view")) return null;
+      const ahead = { from: s.now, to: addDays(s.now, 27) };
+      const rows = s.departments.map((d) => ({ d, m: emps.filter((e) => e.departmentId === d.id) })).filter((x) => x.m.length).map(({ d, m }) => ({ d, n: m.length, today: presenceCount(s, m, s.now), ahead: presenceDays(s, m, ahead.from, ahead.to) }));
+      return { ...base, description: "Situation du jour et part des jours à distance sur les 4 prochaines semaines, par département.", head: ["Département", "Effectif", "Sur site (jour)", "À distance (jour)", "Absents (jour)", "Jours à distance (4 sem.) %"], rows: rows.map(({ d, n, today, ahead: a }) => [d.name, n, today.onsite, today.remote, today.absent, Math.round(a.remoteSharePct)]), chart: { labels: rows.map(({ d }) => d.name), series: [{ name: "Sur site", values: rows.map(({ today }) => today.onsite) }, { name: "À distance", values: rows.map(({ today }) => today.remote) }] }, source: `Basé sur ${emps.length} collaborateurs, jour de référence ${fmtDate(s.now)}` };
     }
     case "disponibilites": {
       const fc = forecastByGrade(s, { from: s.now, horizonMonths: 6, departmentId: f.dept });

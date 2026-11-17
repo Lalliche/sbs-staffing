@@ -8,7 +8,8 @@ import { dur, ease, spring } from "@/lib/motion-tokens";
 import { useSession } from "@/lib/store/hooks";
 import { unreadCount } from "@/lib/store/selectors/notifications";
 import { BrandLockup, Monogram } from "./Brand";
-import { canSee, NAV, type NavItem } from "./nav-config";
+import { isSelfView } from "@/lib/store/selectors/core";
+import { canSee, resolveNav, type NavItem } from "./nav-config";
 import { site } from "@/content/site";
 
 export const SIDEBAR_W = 248;
@@ -53,7 +54,7 @@ export function Sidebar({ collapsed, onToggle, mobile, onNavigate }: { collapsed
   const { s, me, can } = useSession();
   const path = usePathname();
   if (!me) return null;
-  const groups = NAV.map((g) => ({ ...g, items: g.items.filter((i) => canSee(i, can)) })).filter((g) => g.items.length);
+  const groups = resolveNav(isSelfView(s)).map((g) => ({ ...g, items: g.items.filter((i) => canSee(i, can)) })).filter((g) => g.items.length);
   const unread = unreadCount(s, me.id);
   const isActive = (href: string) => path === href || path.startsWith(href + "/");
   const c = collapsed && !mobile;

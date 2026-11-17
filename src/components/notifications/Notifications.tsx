@@ -29,7 +29,7 @@ export function NotificationsPage() {
   const KINDS = Object.keys(NOTIFICATION_KIND_LABEL).filter((k) => k !== "SYSTEM") as NotificationKind[];
   return (
     <>
-      <PageHeader title="Notifications" description="Demandes, affectations, conflits, congés, timesheets, certifications : historique et préférences." actions={<Button variant="secondary" disabled={!all.some((n) => !n.read)} onClick={() => act((d) => markAllRead(d))}>Tout marquer comme lu</Button>} />
+      <PageHeader title="Notifications" description="Demandes, affectations, conflits, certifications : historique et préférences." actions={<Button variant="secondary" disabled={!all.some((n) => !n.read)} onClick={() => act((d) => markAllRead(d))}>Tout marquer comme lu</Button>} />
       <Tabs label="Filtrer" value={tab} onChange={(v) => q.set("tab", v === "toutes" ? null : v)} className="mb-4" items={[{ value: "toutes", label: "Toutes", count: all.length }, { value: "non-lues", label: "Non lues", count: all.filter((n) => !n.read).length }, ...kinds.map((k) => ({ value: k, label: NOTIFICATION_KIND_LABEL[k], count: all.filter((n) => n.kind === k).length }))]} />
       <div className="grid gap-4 xl:grid-cols-[1.6fr_1fr]">
         <Card className="!p-0">{list.length === 0 ? <EmptyState icon={Bell} title="Aucune notification" description={tab === "non-lues" ? "Tout est à jour." : "Rien dans cette catégorie."} /> : <ul>{list.map((n) => (

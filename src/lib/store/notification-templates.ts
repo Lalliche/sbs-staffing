@@ -12,7 +12,7 @@ export interface NotificationTemplate {
 }
 export type TemplateMap = Record<NotificationKind, NotificationTemplate>;
 
-export const NOTIFICATION_KINDS: NotificationKind[] = ["REQUEST", "ASSIGNMENT", "MISSION", "MARKETPLACE", "LEAVE", "TIMESHEET", "CONFLICT", "OVERLOAD", "CERTIFICATION", "UNSTAFFED", "SYSTEM"];
+export const NOTIFICATION_KINDS: NotificationKind[] = ["REQUEST", "ASSIGNMENT", "MISSION", "CONFLICT", "OVERLOAD", "CERTIFICATION", "UNSTAFFED", "SYSTEM"];
 
 /** Placeholders understood by the (future) renderer. */
 export const TEMPLATE_PLACEHOLDERS = ["{{personne}}", "{{mission}}", "{{periode}}", "{{reference}}", "{{lien}}"] as const;
@@ -21,9 +21,6 @@ export const DEFAULT_TEMPLATES: TemplateMap = {
   REQUEST: { subject: "Nouvelle demande de staffing {{reference}}", body: "{{personne}} a soumis une demande pour la mission « {{mission}} » ({{periode}}). Ouvrez la file : {{lien}}" },
   ASSIGNMENT: { subject: "Affectation confirmée — {{mission}}", body: "Vous êtes affecté(e) à « {{mission}} » ({{periode}}). Détails : {{lien}}" },
   MISSION: { subject: "Mission modifiée — {{mission}}", body: "L’équipe ou la période de « {{mission}} » a changé ({{periode}}). Consultez : {{lien}}" },
-  MARKETPLACE: { subject: "Marketplace — {{mission}}", body: "{{personne}} a postulé à l’opportunité « {{mission}} ». Examinez la candidature : {{lien}}" },
-  LEAVE: { subject: "Demande de congé à traiter", body: "{{personne}} demande un congé ({{periode}}). Approuver ou refuser : {{lien}}" },
-  TIMESHEET: { subject: "Timesheet à soumettre ou à valider", body: "La feuille de temps de la semaine du {{periode}} attend une action. Ouvrir : {{lien}}" },
   CONFLICT: { subject: "Conflit de planning — {{personne}}", body: "Un conflit a été détecté sur « {{mission}} » ({{periode}}). Arbitrer : {{lien}}" },
   OVERLOAD: { subject: "Surcharge détectée — {{personne}}", body: "{{personne}} dépasse le seuil de charge sur {{periode}}. Rééquilibrer : {{lien}}" },
   CERTIFICATION: { subject: "Certification bientôt expirée", body: "La certification de {{personne}} expire ({{periode}}). Planifier le renouvellement : {{lien}}" },

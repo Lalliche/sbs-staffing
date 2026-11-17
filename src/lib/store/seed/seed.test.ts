@@ -6,7 +6,7 @@ import { deficitLabel, forecastByGrade, recruitmentNeeds } from "../../engine/fo
 import { findPlanConflicts } from "../../engine/conflicts";
 import { utilizationOf, statusOf } from "../../engine/utilization";
 import { addDays } from "../../engine/dates";
-import { anomalies } from "../../engine/timesheet";
+import { presenceCount, presenceOn } from "../../engine/workmode";
 import { checkBooking } from "../../engine/conflicts";
 
 const s = buildSeed(2);
@@ -29,10 +29,8 @@ describe("seed — volumes (spec 9)", () => {
     expect(s.assignments.some((a) => a.status === "HARD")).toBe(true);
     expect(s.requests.length).toBeGreaterThanOrEqual(6);
     expect(new Set(s.requests.map((r) => r.status)).size).toBeGreaterThanOrEqual(6);
-    expect(new Set(s.leaves.map((l) => l.status))).toEqual(new Set(["APPROUVEE", "SOUMISE", "REFUSEE", "BROUILLON"]));
+    expect(new Set(s.leaves.map((l) => l.status))).toEqual(new Set(["APPROUVEE"])); // read-only absences: no leave workflow
     expect(new Set(s.pipeline.map((p) => p.certainty))).toEqual(new Set(["CONFIRMEE", "PROBABLE", "OPPORTUNITE"]));
-    const weeks = new Set(s.timesheets.map((t) => t.weekStart));
-    expect(weeks.size).toBe(8);
   });
   it("has unique matricules and mission references, and valid links", () => {
     expect(new Set(s.employees.map((e) => e.matricule)).size).toBe(40);
@@ -84,14 +82,14 @@ describe("seed — storylines (spec 9)", () => {
     const c = checkBooking(s, { employeeId: "e04", projectId: UNSTAFFED_PROJECT, startDate: req.startDate, endDate: req.endDate, allocationPct: 60, status: "HARD" });
     expect(c.some((x) => x.kind === "OVERALLOCATION" && x.severity === "ERROR" && x.peakPct === 120)).toBe(true);
   });
-  it("a pending leave, once approved, makes the top candidate unavailable", () => {
+  it("an approved absence over the whole period makes the top candidate unavailable", () => {
     const t = buildSeed(2);
     const req = t.requirements.find((r) => r.projectId === UNSTAFFED_PROJECT && r.gradeMin === "g-3")!;
     const proj = t.projects.find((p) => p.id === UNSTAFFED_PROJECT)!;
     const pool = candidatePool(t, { gradeMin: req.gradeMin, projectLeadId: proj.leadId });
     const top = rankCandidates(t, requirementLike(req, proj), { employeeIds: pool })[0];
     expect(top.employeeId).toBe("e16");
-    t.leaves.find((l) => l.id === "lv-02")!.status = "APPROUVEE";
+    t.leaves.push({ id: "lv-test", employeeId: "e16", type: "CONGE_ANNUEL", startDate: "2026-12-14", endDate: "2027-01-20", status: "APPROUVEE", createdAt: "2026-11-12" });
     const after = rankCandidates(t, requirementLike(req, proj), { employeeIds: pool });
     expect(after.find((r) => r.employeeId === "e16")!.compatible).toBe(false);
     expect(after[0].employeeId).not.toBe("e16");
@@ -106,19 +104,23 @@ describe("seed — storylines (spec 9)", () => {
     expect(cs.some((c) => c.employeeId === "e05" && c.kind === "LEAVE")).toBe(true);
     expect(cs.find((c) => c.employeeId === "e06" && c.kind === "OVERALLOCATION")?.acknowledged).toBe(true);
   });
-  it("a timesheet awaits validation with an anomaly (hours during leave)", () => {
-    const ts = s.timesheets.filter((t) => t.status === "SOUMIS");
-    expect(ts.length).toBeGreaterThan(3);
-    expect(ts.some((t) => anomalies(s, t).some((a) => a.kind === "ON_LEAVE"))).toBe(true);
+  it("work mode: most people have a usual remote day, a few have one-off exceptions, and today's counts add up", () => {
+    const active = s.employees.filter((e) => e.status === "ACTIF");
+    expect(active.filter((e) => (e.remoteWeekdays ?? []).length > 0).length).toBeGreaterThan(active.length / 2);
+    expect(active.some((e) => !(e.remoteWeekdays ?? []).length)).toBe(true);
+    for (const e of s.employees) for (const d of e.remoteWeekdays ?? []) expect((e.workingWeekdays ?? [0, 1, 2, 3, 4]).includes(d)).toBe(true); // never remote on a day off
+    expect(s.workModes.length).toBeGreaterThanOrEqual(5);
+    for (const w of s.workModes) expect(s.employees.some((e) => e.id === w.employeeId)).toBe(true);
+    const c = presenceCount(s, active, "2026-11-16"); // a Monday
+    expect(c.onsite + c.remote + c.absent + c.off).toBe(active.length);
+    expect(c.onsite).toBeGreaterThan(0);
+    expect(c.remote).toBeGreaterThan(0);
+    expect(presenceOn(s, s.employees.find((e) => e.id === "e04")!, s.now)).toBe("REMOTE"); // seeded one-off exception on the demo day
   });
   it("a certification expires within 30 days of the demo clock", () => {
     const limit = addDays(s.now, 30);
     expect(s.employeeCertifications.some((c) => c.certificationId === "ce-ifrs" && c.expiresAt > s.now && c.expiresAt <= limit)).toBe(true);
     expect(s.notifications.some((n) => n.kind === "CERTIFICATION")).toBe(true);
-  });
-  it("marketplace: 3 open opportunities, 2 applications", () => {
-    expect(s.opportunities.filter((o) => o.status === "OUVERTE")).toHaveLength(3);
-    expect(s.applications).toHaveLength(2);
   });
   it("audit log is seeded with an exception that carries a reason", () => {
     expect(s.audit.some((a) => a.action === "assignment.exception" && !!a.reason)).toBe(true);

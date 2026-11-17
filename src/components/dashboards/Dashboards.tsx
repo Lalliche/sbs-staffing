@@ -2,7 +2,7 @@
 import { AlertTriangle, ArrowRight, Clock3, Download, FileText, Inbox, ShieldCheck } from "lucide-react";
 import Link from "next/link";
 import { useMemo, type ReactNode } from "react";
-import { Bars, ChartCard, Donut, LineChart, StackedBars } from "@/components/charts/Charts";
+import { Bars, ChartCard, Donut, LineChart } from "@/components/charts/Charts";
 import { Kpi } from "./Kpi";
 import { PersonCell } from "@/components/shared/PersonCell";
 import { Badge, StatusPill } from "@/components/ui/Badge";
@@ -12,11 +12,14 @@ import { SelectInput } from "@/components/ui/FormInputs";
 import { useFirstLoad } from "@/components/app/useSkeleton";
 import { downloadFile, toCsv } from "@/lib/download";
 import { useQueryState } from "@/lib/use-query-state";
-import { fmtDate, fmtDateShort, fmtHours, fmtPct, relDays } from "@/lib/engine/format";
+import { fmtDate, fmtDateShort, fmtPct, relDays } from "@/lib/engine/format";
 import { useSession } from "@/lib/store/hooks";
 import { adminDashboard, executive, hrDashboard, myWeek, PERIOD_LABEL, resourceManager, teamDashboard, type DashFilters, type Period } from "@/lib/store/selectors/dashboard";
 import { nameOf } from "@/lib/store/selectors/core";
-import { PRIORITY, REQUEST_STATUS, TIMESHEET_STATUS } from "@/lib/ui-domain";
+import { PRIORITY, REQUEST_STATUS } from "@/lib/ui-domain";
+import { PresenceToday } from "@/components/presence/PresenceToday";
+import { PresenceWeek } from "@/components/presence/PresenceWeek";
+import { canEditPresence } from "@/lib/store/selectors/presence";
 import type { AppState } from "@/lib/store/types";
 
 const Grid = ({ children, cols = 3 }: { children: ReactNode; cols?: 2 | 3 }) => <div className={`mt-4 grid gap-4 ${cols === 3 ? "lg:grid-cols-3" : "lg:grid-cols-2"}`}>{children}</div>;
@@ -55,11 +58,11 @@ function Executive({ s, admin }: { s: AppState; admin?: boolean }) {
       ) : (
         <>
           <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">{d.kpis.map((k) => <Kpi key={k.key} k={k} />)}</div>
-          <p className="mt-2 text-2xs text-text-muted">Utilisation planifiée = heures affectées confirmées ÷ capacité théorique. Réelle = heures de timesheets validés ÷ capacité théorique. Les deux sont toujours distinguées.</p>
+          <p className="mt-2 text-2xs text-text-muted">Utilisation planifiée = heures affectées confirmées ÷ capacité théorique.</p>
           <div className="mt-5 grid gap-4 xl:grid-cols-3">
             <div className="xl:col-span-2">
-              <ChartCard title="Tendance d’utilisation (8 semaines)" subtitle="Planifiée, réelle et facturable — séparées" source={`Basé sur ${d.headcount} collaborateurs · timesheets validés pour le réel`} table={{ head: ["Semaine du", "Planifiée %", "Réelle %", "Facturable %"], rows: d.trend.map((t) => [t.label, Math.round(t.planned), Math.round(t.real), Math.round(t.billable)]) }} summary="Courbes d’utilisation planifiée, réelle et facturable sur 8 semaines">
-                <LineChart id={`trend-${f.dept}-${f.office}-${f.grade}`} labels={d.trend.map((t) => t.label)} unit="%" thresholds={[{ value: s.settings.thresholds.underUse, label: `Sous-occ. ${s.settings.thresholds.underUse} %` }, { value: s.settings.thresholds.overload, label: `Surcharge ${s.settings.thresholds.overload} %`, solid: true }]} series={[{ name: "Planifiée", values: d.trend.map((t) => Math.round(t.planned)) }, { name: "Réelle", values: d.trend.map((t) => Math.round(t.real)) }, { name: "Facturable", values: d.trend.map((t) => Math.round(t.billable)) }]} />
+              <ChartCard title="Tendance d’utilisation (8 semaines)" subtitle="Utilisation planifiée" source={`Basé sur ${d.headcount} collaborateurs`} table={{ head: ["Semaine du", "Planifiée %"], rows: d.trend.map((t) => [t.label, Math.round(t.planned)]) }} summary="Courbe d’utilisation planifiée sur 8 semaines">
+                <LineChart id={`trend-${f.dept}-${f.office}-${f.grade}`} labels={d.trend.map((t) => t.label)} unit="%" thresholds={[{ value: s.settings.thresholds.underUse, label: `Sous-occ. ${s.settings.thresholds.underUse} %` }, { value: s.settings.thresholds.overload, label: `Surcharge ${s.settings.thresholds.overload} %`, solid: true }]} series={[{ name: "Planifiée", values: d.trend.map((t) => Math.round(t.planned)) }]} />
               </ChartCard>
             </div>
             <ChartCard title="Disponibilité (4 semaines)" subtitle="Répartition des collaborateurs" table={{ head: ["Niveau", "Collaborateurs"], rows: d.availSlices.map((x) => [x.label, x.value]) }} summary="Répartition par niveau de disponibilité">
@@ -70,7 +73,7 @@ function Executive({ s, admin }: { s: AppState; admin?: boolean }) {
             <ChartCard title="Effectifs par grade" table={{ head: ["Grade", "Effectif"], rows: d.byGrade.map((x) => [x.label, x.value]) }}><Bars id="grade" labels={d.byGrade.map((x) => x.label)} series={[{ name: "Effectif", values: d.byGrade.map((x) => x.value) }]} h={170} /></ChartCard>
             <ChartCard title="Effectifs par département" table={{ head: ["Département", "Effectif"], rows: d.byDept.map((x) => [x.label, x.value]) }}><Bars id="dept" horizontal labels={d.byDept.map((x) => x.label)} series={[{ name: "Effectif", values: d.byDept.map((x) => x.value) }]} /></ChartCard>
             <ChartCard title="Charge par département" subtitle="Utilisation planifiée, 4 prochaines semaines" table={{ head: ["Département", "Planifiée %"], rows: d.workload.map((x) => [x.label, x.value]) }}><Bars id="workload" horizontal labels={d.workload.map((x) => x.label)} series={[{ name: "Planifiée", values: d.workload.map((x) => x.value) }]} max={120} formatValue={(v) => `${v} %`} /></ChartCard>
-            <ChartCard title="Heures facturables / non facturables" subtitle="Timesheets validés, par semaine" table={{ head: ["Semaine du", "Facturables h", "Non facturables h"], rows: d.trend.map((t) => [t.label, Math.round(t.billableH), Math.round(t.worked - t.billableH)]) }}><StackedBars id="bill" labels={d.trend.map((t) => t.label)} stacks={[{ name: "Facturables", values: d.trend.map((t) => Math.round(t.billableH)) }, { name: "Non facturables", values: d.trend.map((t) => Math.round(t.worked - t.billableH)) }]} unit=" h" /></ChartCard>
+            <PresenceToday summary={d.presence} now={s.now} />
             <ChartCard title="Missions par statut" table={{ head: ["Statut", "Missions"], rows: d.missionsByStatus.map((x) => [x.label, x.value]) }}><Bars id="mstatus" horizontal labels={d.missionsByStatus.map((x) => x.label)} series={[{ name: "Missions", values: d.missionsByStatus.map((x) => x.value) }]} /></ChartCard>
             <ChartCard title="Capacité à 3 mois" subtitle="Capacité disponible vs besoins pondérés (ETP)" source="Voir Capacité pour le détail et le « et si »" table={{ head: ["Grade", "Capacité ETP", "Besoins ETP", "Déficit (pers.)"], rows: d.forecast.map((x) => [x.label, x.supply, x.demand, x.deficit]) }}><Bars id="fc" labels={d.forecast.map((x) => x.label)} series={[{ name: "Capacité", values: d.forecast.map((x) => x.supply) }, { name: "Besoins", values: d.forecast.map((x) => x.demand) }]} /></ChartCard>
           </Grid>
@@ -116,12 +119,12 @@ function RM({ s }: { s: AppState }) {
           <ul>{[...d.queue].sort((a, b) => (b.priority === "URGENTE" ? 1 : 0) - (a.priority === "URGENTE" ? 1 : 0)).slice(0, 5).map((r) => <li key={r.id}><Row href={`/app/demandes/${r.id}`} right={<StatusPill tone={PRIORITY[r.priority].tone} label={PRIORITY[r.priority].label} />}><span className="font-medium text-ink">{r.reference}</span> <span className="text-text-secondary">{s.projects.find((p) => p.id === r.projectId)?.name}</span></Row></li>)}</ul>
         </Card>
         <Card><CardHeader title="Conflits de planning" action={<Button href="/app/planning" variant="secondary" size="sm">Voir dans le planning</Button>} />
-          {d.conflicts.length === 0 ? <EmptyState icon={ShieldCheck} title="Aucun conflit" /> : <ul>{d.conflicts.map((c, i) => <li key={i}><Row href={`/app/planning?employee=${c.employeeId}`} right={c.kind === "LEAVE_PENDING" ? <StatusPill tone="alert" label="Congé en attente" /> : <StatusPill tone={c.acknowledged ? "alert" : "conflict"} label={c.acknowledged ? "Exception accordée" : "Conflit"} />}><span className="font-medium text-ink">{nameOf(s, c.employeeId)}</span><span className="block text-xs text-text-secondary">{c.message}</span></Row></li>)}</ul>}
+          {d.conflicts.length === 0 ? <EmptyState icon={ShieldCheck} title="Aucun conflit" /> : <ul>{d.conflicts.map((c, i) => <li key={i}><Row href={`/app/planning?employee=${c.employeeId}`} right={<StatusPill tone={c.acknowledged ? "alert" : "conflict"} label={c.acknowledged ? "Exception accordée" : "Conflit"} />}><span className="font-medium text-ink">{nameOf(s, c.employeeId)}</span><span className="block text-xs text-text-secondary">{c.message}</span></Row></li>)}</ul>}
         </Card>
-        <Card><CardHeader title="Surveillance" description="Réservations, congés, charge" />
+        <PresenceToday summary={d.presence} now={s.now} />
+        <Card><CardHeader title="Surveillance" description="Réservations, charge" />
           <ul>
             {d.expiring.map((a) => <li key={a.id}><Row href="/app/planning" right={<Badge tone="alert" icon>Expire {relDays(a.softExpiresAt!, s.now)}</Badge>}>Réservation de <span className="font-medium text-ink">{nameOf(s, a.employeeId)}</span></Row></li>)}
-            {d.pendingLeaves.slice(0, 3).map((l) => <li key={l.id}><Row href="/app/disponibilites" right={<Badge tone="info" icon>Congé en attente</Badge>}>{nameOf(s, l.employeeId)} · {fmtDateShort(l.startDate)} → {fmtDateShort(l.endDate)}</Row></li>)}
             {d.over.map((x) => <li key={x.e.id}><Row href="/app/planning" right={<StatusPill tone="conflict" label={`Surchargé ${Math.round(x.planned)} %`} />}>{x.e.firstName} {x.e.lastName}</Row></li>)}
             {d.under.slice(0, 3).map((x) => <li key={x.e.id}><Row href="/app/collaborateurs?view=sous-occupes" right={<StatusPill tone="alert" label={`Sous-occupé ${Math.round(x.planned)} %`} />}>{x.e.firstName} {x.e.lastName}</Row></li>)}
           </ul>
@@ -138,8 +141,8 @@ function Team({ s, partner }: { s: AppState; partner?: boolean }) {
     <>
       <PageHeader title={partner ? "Mon périmètre" : "Mon équipe"} description={`${d.rows.length} collaborateurs dans votre périmètre · charge des 4 prochaines semaines (réservations incluses)`} />
       <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-        <Kpi k={{ key: "t-ts", label: "Timesheets à valider", value: d.waitingSheets, display: String(d.waitingSheets), href: "/app/timesheets?vue=validation", tone: d.waitingSheets ? "alert" : "ok" }} />
-        <Kpi k={{ key: "t-lv", label: "Congés à approuver", value: d.pendingLeaves.length, display: String(d.pendingLeaves.length), href: "/app/disponibilites", tone: d.pendingLeaves.length ? "alert" : "ok" }} />
+        {d.presence.allowed && <Kpi k={{ key: "t-on", label: "Sur site aujourd’hui", value: d.presence.onsite, display: String(d.presence.onsite), href: "/app/collaborateurs?presence=ONSITE", hint: `sur ${d.presence.total} collaborateurs` }} />}
+        {d.presence.allowed && <Kpi k={{ key: "t-re", label: "À distance aujourd’hui", value: d.presence.remote, display: String(d.presence.remote), href: "/app/collaborateurs?presence=REMOTE", hint: d.presence.absent ? `${d.presence.absent} absent(s)` : "Aucune absence" }} />}
         <Kpi k={{ key: "t-pr", label: "Missions suivies", value: d.myProjects.length, display: String(d.myProjects.length), href: "/app/missions" }} />
         <Kpi k={{ key: "t-un", label: "Postes à pourvoir", value: d.myProjects.reduce((a, p) => a + p.cov.missing, 0), display: String(d.myProjects.reduce((a, p) => a + p.cov.missing, 0)), href: "/app/missions?vue=attente", tone: d.myProjects.some((p) => p.cov.missing) ? "alert" : "ok" }} />
       </div>
@@ -162,18 +165,17 @@ function RH({ s }: { s: AppState }) {
   const d = hrDashboard(s);
   return (
     <>
-      <PageHeader title="Tableau de bord RH" description="Congés, effectifs, certifications et fins de contrat" />
+      <PageHeader title="Tableau de bord RH" description="Effectifs, présence, certifications et fins de contrat" />
       <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
         <Kpi k={{ key: "h-act", label: "Effectif actif", value: d.active, display: String(d.active), href: "/app/collaborateurs" }} />
-        <Kpi k={{ key: "h-lv", label: "Congés en attente", value: d.pendingLeaves.length, display: String(d.pendingLeaves.length), href: "/app/disponibilites", tone: d.pendingLeaves.length ? "alert" : "ok" }} />
+        <Kpi k={{ key: "h-rem", label: "À distance aujourd’hui", value: d.presence.remote, display: String(d.presence.remote), href: "/app/collaborateurs?presence=REMOTE", hint: `sur site : ${d.presence.onsite}` }} />
         <Kpi k={{ key: "h-cert", label: "Certifications < 30 j", value: d.certs.length, display: String(d.certs.length), tone: d.certs.length ? "alert" : "ok", href: "/app/collaborateurs" }} />
         <Kpi k={{ key: "h-arch", label: "Archivés", value: d.archived, display: String(d.archived), href: "/app/collaborateurs?view=archives" }} />
       </div>
       <div className="mt-5 grid gap-4 xl:grid-cols-3">
         <Card><CardHeader title="Certifications expirant sous 30 jours" />
           {d.certs.length === 0 ? <EmptyState icon={ShieldCheck} title="Aucune certification n’expire bientôt" /> : <ul>{d.certs.map((c) => <li key={c.employeeId + c.certificationId}><Row href={`/app/collaborateurs/${c.employeeId}?tab=certifications`} right={<StatusPill tone="alert" label={`Expire ${relDays(c.expiresAt, s.now)}`} />}><span className="font-medium text-ink">{nameOf(s, c.employeeId)}</span><span className="block text-xs text-text-muted">{s.certifications.find((x) => x.id === c.certificationId)?.name}</span></Row></li>)}</ul>}</Card>
-        <Card><CardHeader title="Congés à examiner" action={<Button href="/app/disponibilites" variant="secondary" size="sm">Ouvrir</Button>} />
-          <ul>{d.pendingLeaves.slice(0, 6).map((l) => <li key={l.id}><Row href="/app/disponibilites"><span className="font-medium text-ink">{nameOf(s, l.employeeId)}</span><span className="block text-xs text-text-muted">{fmtDateShort(l.startDate)} → {fmtDate(l.endDate)}</span></Row></li>)}</ul></Card>
+        <PresenceToday summary={d.presence} now={s.now} />
         <ChartCard title="Effectifs par contrat" table={{ head: ["Contrat", "Effectif"], rows: d.byContract.map((x) => [x.label, x.value]) }}><Donut id="contract" slices={d.byContract.filter((x) => x.value)} /></ChartCard>
       </div>
       {d.ending.length > 0 && <Card className="mt-4"><CardHeader title="Fins de contrat à venir" /><ul>{d.ending.map((e) => <li key={e.id}><Row href={`/app/collaborateurs/${e.id}`} right={<Badge tone="info" icon>{fmtDate(e.endDate!)}</Badge>}>{e.firstName} {e.lastName} · {e.contract}</Row></li>)}</ul></Card>}
@@ -189,17 +191,15 @@ function Me({ s }: { s: AppState }) {
       <PageHeader title={`Bonjour ${d.emp?.firstName ?? ""}`} description={`Votre semaine du ${fmtDate(d.week.from)} au ${fmtDate(d.week.to)}`} />
       <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
         <Kpi k={{ key: "m-asg", label: "Mes affectations", value: d.assignments.length, display: String(d.assignments.length), href: "/app/planning" }} />
-        <Kpi k={{ key: "m-ts", label: "Timesheets à compléter", value: d.todo.length, display: String(d.todo.length), tone: d.todo.length ? "alert" : "ok", href: "/app/timesheets" }} />
-        <Kpi k={{ key: "m-lv", label: "Demandes de congé ouvertes", value: d.leaves.length, display: String(d.leaves.length), href: "/app/disponibilites" }} />
-        <Kpi k={{ key: "m-op", label: "Opportunités ouvertes", value: d.opportunities.length, display: String(d.opportunities.length), href: "/app/marketplace" }} />
+        <Kpi k={{ key: "m-pr", label: "Aujourd’hui", value: 0, display: d.presenceWeek.find((x) => x.date === s.now)?.presence === "REMOTE" ? "À distance" : d.presenceWeek.find((x) => x.date === s.now)?.presence === "ONSITE" ? "Présentiel" : "—", hint: "Mon mode de présence" }} />
       </div>
       <div className="mt-5 grid gap-4 xl:grid-cols-2">
         <Card><CardHeader title="Mes affectations de la semaine" />
-          {d.assignments.length === 0 ? <EmptyState icon={Clock3} title="Aucune affectation cette semaine" description="Consultez la marketplace pour de nouvelles opportunités." action={<Button href="/app/marketplace" variant="secondary">Voir la marketplace</Button>} /> : <ul>{d.assignments.map((a) => <li key={a.id}><Row href={`/app/missions/${a.projectId}`} right={<Badge tone={a.status === "HARD" ? "ok" : "info"} icon>{a.status === "HARD" ? "Confirmée" : "Réservation"}</Badge>}><span className="font-medium text-ink">{s.projects.find((p) => p.id === a.projectId)?.name}</span><span className="block text-xs text-text-muted">{a.allocationPct} % · jusqu’au {fmtDate(a.endDate)}</span></Row></li>)}</ul>}
+          {d.assignments.length === 0 ? <EmptyState icon={Clock3} title="Aucune affectation cette semaine" description="Le Resource Manager vous contactera dès qu’une mission correspond à votre profil." /> : <ul>{d.assignments.map((a) => <li key={a.id}><Row href={`/app/missions/${a.projectId}`} right={<Badge tone={a.status === "HARD" ? "ok" : "info"} icon>{a.status === "HARD" ? "Confirmée" : "Réservation"}</Badge>}><span className="font-medium text-ink">{s.projects.find((p) => p.id === a.projectId)?.name}</span><span className="block text-xs text-text-muted">{a.allocationPct} % · jusqu’au {fmtDate(a.endDate)}</span></Row></li>)}</ul>}
         </Card>
-        <Card><CardHeader title="Mes timesheets" action={<Button href="/app/timesheets" size="sm">Saisir mes heures</Button>} />
-          <ul>{d.timesheets.map((t) => <li key={t.id}><Row href={`/app/timesheets?week=${t.weekStart}`} right={<StatusPill tone={TIMESHEET_STATUS[t.status].tone} label={TIMESHEET_STATUS[t.status].label} />}>Semaine du {fmtDate(t.weekStart)}</Row></li>)}</ul>
-          {d.util && <p className="mt-3 text-xs text-text-secondary">Ce mois : utilisation planifiée {fmtPct(d.util.planned)}{d.util.worked ? ` · réelle ${fmtPct(d.util.real)} (${fmtHours(d.util.worked)} validées)` : ""}.</p>}
+        <Card><CardHeader title="Ma présence" description="Cliquez sur un jour pour passer de présentiel à à distance" />
+          {d.emp && <PresenceWeek employeeId={d.emp.id} weeks={[d.presenceWeek]} today={s.now} editable={canEditPresence(s, d.emp.id)} />}
+          {d.util && <p className="mt-3 text-xs text-text-secondary">Ce mois : utilisation planifiée {fmtPct(d.util.planned)}.</p>}
         </Card>
         {d.certs.length > 0 && <Card><CardHeader title="Mes certifications" /><ul>{d.certs.map((c) => <li key={c.certificationId}><Row href={`/app/collaborateurs/${c.employeeId}?tab=certifications`} right={<StatusPill tone="alert" label={`Expire ${relDays(c.expiresAt, s.now)}`} />}>{s.certifications.find((x) => x.id === c.certificationId)?.name}</Row></li>)}</ul></Card>}
       </div>

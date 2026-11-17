@@ -12,7 +12,8 @@ const played = new Set<string>();
 export function Kpi({ k, className }: { k: KpiData; className?: string }) {
   const reduce = useReducedMotion();
   const ref = useRef<HTMLAnchorElement>(null);
-  const inView = useInView(ref, { once: true, amount: 0.6 });
+  const divRef = useRef<HTMLDivElement>(null); // tiles without a link need their own observed element, otherwise they never fade in
+  const inView = useInView(k.href ? ref : divRef, { once: true, amount: 0.6 });
   const first = !reduce && !played.has(k.key);
   if (inView) played.add(k.key);
   const tone: Tone | undefined = k.tone && k.tone !== "neutral" ? k.tone : undefined;
@@ -33,5 +34,5 @@ export function Kpi({ k, className }: { k: KpiData; className?: string }) {
     </>
   );
   const cls = cn("block rounded-lg border border-border bg-bg p-4 transition-[border-color,box-shadow] duration-150 hover:border-primary/50 hover:shadow-sm", className);
-  return k.href ? <Link ref={ref} href={k.href} className={cls}>{body}</Link> : <div className={cls}>{body}</div>;
+  return k.href ? <Link ref={ref} href={k.href} className={cls}>{body}</Link> : <div ref={divRef} className={cls}>{body}</div>;
 }
